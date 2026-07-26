@@ -2,12 +2,12 @@
 
 Still is a private, local-first Chrome extension for interrupting autopilot browsing and protecting focused work.
 
-## What it combines
+## What it has
 
-- **one sec:** a deliberate pause before distraction and intention-setting
-- **1Focus:** reliable site protection and timed focus blocks
-- **Regain:** low-friction screen-time awareness
-- **Forest:** a calm growing visual, without coins, streak anxiety, or punishment
+- A deliberate pause before distraction and intention-setting
+- Reliable site protection and timed focus blocks
+- Low-friction screen-time awareness
+- Calm growing visual, without coins, streak anxiety, or punishment
 
 ## Install locally
 
