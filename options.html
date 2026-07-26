@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Protection · Still</title>
+    <link rel="stylesheet" href="ui.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="options-app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark"><span class="brand-stem"></span></span>
+          <span>Still</span>
+        </div>
+        <span class="saved" id="saved" role="status">Saved locally</span>
+      </header>
+
+      <div class="options-shell">
+        <aside class="sidebar">
+          <h1 id="sidebar-title">Protection</h1>
+          <p id="sidebar-intro">Shape the space between impulse and choice.</p>
+
+          <nav aria-label="Still settings">
+            <div class="nav-group">
+              <p class="nav-label">Activity</p>
+              <button class="nav-item" type="button" data-view="insights">Insights</button>
+            </div>
+            <div class="nav-group">
+              <p class="nav-label">Settings</p>
+              <button class="nav-item" type="button" data-view="protection">Protection</button>
+              <button class="nav-item" type="button" data-view="routines">Routines</button>
+              <button class="nav-item" type="button" data-view="data">Data &amp; privacy</button>
+            </div>
+          </nav>
+        </aside>
+
+        <main class="main">
+          <section class="view" id="protection-view" data-view-panel="protection">
+            <div class="page-heading">
+              <h2>Protection</h2>
+              <p>Choose what Still protects and how firmly.</p>
+            </div>
+
+            <div class="content-column">
+              <section class="settings-section">
+                <h3>Focus behavior</h3>
+                <div class="setting-row">
+                  <div class="row-copy">
+                    <strong>Mindful pauses</strong>
+                    <p>Pause before protected sites even outside a focus session.</p>
+                  </div>
+                  <label class="switch">
+                    <input id="mindful-mode" type="checkbox" />
+                    <span class="switch-track"></span>
+                    <span class="sr-only">Use mindful pauses</span>
+                  </label>
+                </div>
+                <div class="setting-row emphasis">
+                  <div class="row-copy">
+                    <strong>Strict focus</strong>
+                    <p>No five-minute access while a protected session is active.</p>
+                  </div>
+                  <label class="switch">
+                    <input id="strict-focus" type="checkbox" />
+                    <span class="switch-track"></span>
+                    <span class="sr-only">Use strict focus</span>
+                  </label>
+                </div>
+                <label class="setting-row" for="pause-seconds">
+                  <span class="row-copy">
+                    <strong>Pause length</strong>
+                    <span>Long enough to interrupt autopilot.</span>
+                  </span>
+                  <select id="pause-seconds">
+                    <option value="5">5 seconds</option>
+                    <option value="8">8 seconds</option>
+                    <option value="12">12 seconds</option>
+                    <option value="15">15 seconds</option>
+                  </select>
+                </label>
+              </section>
+
+              <section class="settings-section">
+                <h3>Protected sites</h3>
+                <div id="options-sites" class="site-list"></div>
+                <form id="add-form">
+                  <label class="sr-only" for="new-site">Site domain</label>
+                  <input class="field" id="new-site" placeholder="example.com" required />
+                  <button type="submit">Add site</button>
+                </form>
+                <p class="form-error" id="form-error" role="alert"></p>
+              </section>
+
+              <section class="settings-section temporary-access">
+                <h3>Temporary access</h3>
+                <div class="access-row">
+                  <div class="row-copy">
+                    <strong>Strict sessions stay strict</strong>
+                    <p>Ending early requires a reason and a 20-second cooldown. Emergency exit remains available.</p>
+                  </div>
+                  <span class="status">Protected</span>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section class="view" id="routines-view" data-view-panel="routines" hidden>
+            <div class="page-heading routines-heading">
+              <div>
+                <h2>Routines</h2>
+                <p>Make protection part of the shape of your day.</p>
+              </div>
+              <button class="primary-button" id="new-routine" type="button">New routine</button>
+            </div>
+
+            <section class="routine-suggestion" id="routine-suggestion" hidden>
+              <div class="suggestion-heading">
+                <p>Suggested for you</p>
+                <button class="text-button" id="dismiss-suggestion" type="button">Not now</button>
+              </div>
+              <h3 id="suggestion-title"></h3>
+              <p class="suggestion-copy" id="suggestion-copy"></p>
+              <p class="suggestion-detail" id="suggestion-detail"></p>
+              <div class="suggestion-footer">
+                <button class="primary-button" id="review-suggestion" type="button">Review routine</button>
+                <span id="suggestion-evidence"></span>
+              </div>
+            </section>
+
+            <div class="routine-list" id="routine-list"></div>
+
+            <form class="routine-form" id="routine-form" hidden>
+              <div class="routine-form-heading">
+                <div>
+                  <p class="eyebrow" id="routine-form-eyebrow">New routine</p>
+                  <h3 id="routine-form-title">Create a rhythm</h3>
+                </div>
+                <button class="text-button" id="cancel-routine-top" type="button">Cancel</button>
+              </div>
+
+              <input id="routine-id" type="hidden" />
+              <label class="form-field">
+                <span>Name</span>
+                <input id="routine-name" maxlength="60" placeholder="Weekday deep work" required />
+              </label>
+
+              <fieldset class="form-field">
+                <legend>Days</legend>
+                <div class="day-picker" id="routine-days">
+                  <label><input type="checkbox" value="1" /><span>Mon</span></label>
+                  <label><input type="checkbox" value="2" /><span>Tue</span></label>
+                  <label><input type="checkbox" value="3" /><span>Wed</span></label>
+                  <label><input type="checkbox" value="4" /><span>Thu</span></label>
+                  <label><input type="checkbox" value="5" /><span>Fri</span></label>
+                  <label><input type="checkbox" value="6" /><span>Sat</span></label>
+                  <label><input type="checkbox" value="0" /><span>Sun</span></label>
+                </div>
+              </fieldset>
+
+              <div class="form-grid two-column">
+                <label class="form-field">
+                  <span>Starts</span>
+                  <input id="routine-start" type="time" required />
+                </label>
+                <label class="form-field">
+                  <span>Ends</span>
+                  <input id="routine-end" type="time" required />
+                </label>
+              </div>
+
+              <fieldset class="form-field">
+                <legend>Protection</legend>
+                <div class="choice-grid">
+                  <label class="choice-card">
+                    <input name="routine-mode" type="radio" value="strict" checked />
+                    <span>
+                      <strong>Strict focus</strong>
+                      <small>Protected sites stay blocked for the routine.</small>
+                    </span>
+                  </label>
+                  <label class="choice-card">
+                    <input name="routine-mode" type="radio" value="mindful" />
+                    <span>
+                      <strong>Mindful pauses</strong>
+                      <small>Pause first, with five-minute intentional access.</small>
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset class="form-field">
+                <legend>How it starts</legend>
+                <div class="choice-grid">
+                  <label class="choice-card">
+                    <input name="routine-behavior" type="radio" value="ask" checked />
+                    <span>
+                      <strong>Ask me first</strong>
+                      <small>Still notifies you. You choose when to begin.</small>
+                    </span>
+                  </label>
+                  <label class="choice-card">
+                    <input name="routine-behavior" type="radio" value="automatic" />
+                    <span>
+                      <strong>Start automatically</strong>
+                      <small>Protection begins at the scheduled time.</small>
+                    </span>
+                  </label>
+                </div>
+                <p class="routine-note" id="automatic-note" hidden>
+                  Automatic strict focus still keeps the emergency exit available.
+                </p>
+              </fieldset>
+
+              <label class="form-field">
+                <span>Default focus topic <small>Optional</small></span>
+                <input id="routine-topic" maxlength="100" placeholder="Finish the product brief" />
+              </label>
+
+              <fieldset class="form-field">
+                <legend>Protected sites</legend>
+                <p class="field-help">Choose which sites this routine protects.</p>
+                <div class="routine-sites" id="routine-sites"></div>
+              </fieldset>
+
+              <p class="form-error routine-error" id="routine-error" role="alert"></p>
+              <div class="form-actions">
+                <button class="primary-button" type="submit">Save routine</button>
+                <button class="secondary-button" id="cancel-routine" type="button">Cancel</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="view" id="insights-view" data-view-panel="insights" hidden>
+            <div class="insights-heading">
+              <div>
+                <h2 id="period-title">This week</h2>
+                <p id="period-range"></p>
+              </div>
+              <div class="period-control" aria-label="Insights period">
+                <button type="button" data-period="day">Day</button>
+                <button class="active" type="button" data-period="week">Week</button>
+                <button type="button" data-period="month">Month</button>
+              </div>
+            </div>
+
+            <section class="metrics" aria-label="Focus summary">
+              <div class="metric">
+                <strong id="metric-focus">0m</strong>
+                <span>focused</span>
+              </div>
+              <div class="metric">
+                <strong id="metric-sessions">0</strong>
+                <span>sessions</span>
+              </div>
+              <div class="metric">
+                <strong id="metric-impulses">0</strong>
+                <span>impulses paused</span>
+              </div>
+            </section>
+
+            <section class="trend" aria-label="Focus trend">
+              <svg id="trend-chart" viewBox="0 0 900 244" role="img"></svg>
+            </section>
+
+            <section class="distribution">
+              <h3>When distraction shows up</h3>
+              <div class="distribution-bar" id="distribution-bar" aria-label="Distraction timing"></div>
+              <div class="distribution-labels">
+                <span>Morning</span>
+                <span>Afternoon</span>
+                <span>Evening</span>
+              </div>
+              <div class="insight">
+                <span class="insight-mark" aria-hidden="true">⌁</span>
+                <p id="insight-copy">Still is learning when focus and distraction show up.</p>
+              </div>
+              <div class="insight-routine" id="insight-routine" hidden>
+                <div>
+                  <strong id="insight-routine-title"></strong>
+                  <p id="insight-routine-reason"></p>
+                  <small>Based on your last 4 weeks</small>
+                </div>
+                <button id="insight-routine-link" type="button">
+                  Protect this time
+                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M3 8h9M9 4.5 12.5 8 9 11.5"></path>
+                  </svg>
+                </button>
+              </div>
+            </section>
+
+            <section class="site-activity">
+              <h3>Protected sites</h3>
+              <p class="subcopy" id="site-period-copy"></p>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Site</th>
+                    <th scope="col">Impulses</th>
+                    <th scope="col">Total usage</th>
+                  </tr>
+                </thead>
+                <tbody id="site-activity-body"></tbody>
+              </table>
+              <button class="history-link" type="button" data-view="data">
+                View session history
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M3 8h9M9 4.5 12.5 8 9 11.5"></path>
+                </svg>
+              </button>
+            </section>
+          </section>
+
+          <section class="view" id="data-view" data-view-panel="data" hidden>
+            <div class="page-heading">
+              <h2>Data &amp; privacy</h2>
+              <p>Your history stays useful without leaving this device.</p>
+            </div>
+
+            <div class="content-column">
+              <section class="settings-section">
+                <h3>Session history</h3>
+                <div id="session-history" class="history-list"></div>
+              </section>
+              <section class="settings-section">
+                <h3>Recent intentions</h3>
+                <div id="intentions" class="history-list"></div>
+              </section>
+              <section class="settings-section privacy">
+                <h3>Private by design</h3>
+                <p>Still stores your settings, sessions, site activity, and intentions only in Chrome’s local extension storage. It has no account, analytics, ads, or external server.</p>
+              </section>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script src="preview-runtime.js"></script>
+    <script src="routine-suggestions.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

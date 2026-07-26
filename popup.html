@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Still</title>
+    <link rel="stylesheet" href="ui.css" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup-shell">
+      <header class="popup-header">
+        <div class="brand">
+          <span class="brand-mark"><span class="brand-stem"></span></span>
+          <span>Still</span>
+        </div>
+        <button class="icon-button settings-button" id="open-settings" aria-label="Open settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.5 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15Z"></path>
+          </svg>
+        </button>
+      </header>
+
+      <section id="ready-view">
+        <h1>Ready when you are.</h1>
+        <div class="duration-picker" aria-label="Focus duration">
+          <button id="minus" aria-label="Subtract five minutes">−</button>
+          <div>
+            <strong id="minutes">25</strong>
+            <span>minutes</span>
+          </div>
+          <button id="plus" aria-label="Add five minutes">+</button>
+        </div>
+
+        <label class="intention-label" for="intention">What matters now?</label>
+        <input class="field intention" id="intention" maxlength="100" placeholder="Finish the draft" />
+        <button class="primary-button begin-button" id="begin-focus">Begin focus</button>
+      </section>
+
+      <section id="active-view" hidden>
+        <p class="active-kicker">Protected focus</p>
+        <div class="active-orb"><span></span></div>
+        <div class="active-time" id="active-time">25:00</div>
+        <p class="active-intention" id="active-intention"></p>
+        <button class="quiet-button" id="end-focus">End session</button>
+      </section>
+
+      <section id="strict-exit-view" class="strict-exit-view" hidden>
+        <p class="active-kicker">Strict focus</p>
+        <h1>Pause before ending.</h1>
+        <p class="exit-copy">
+          If you truly need to stop, name the reason. Your focused time will still be saved.
+        </p>
+        <label class="intention-label" for="exit-reason">Why do you need to stop?</label>
+        <input
+          class="field intention"
+          id="exit-reason"
+          maxlength="120"
+          placeholder="Something genuinely needs my attention"
+        />
+        <p class="exit-status" id="exit-status" role="status" aria-live="polite"></p>
+        <button class="primary-button exit-confirm" id="confirm-end-focus" disabled>
+          End focus anyway
+        </button>
+        <button class="secondary-button" id="keep-focusing">Keep focusing</button>
+        <button class="emergency-link" id="show-emergency" aria-expanded="false">
+          Emergency exit
+        </button>
+        <div class="emergency-panel" id="emergency-panel" hidden>
+          <p>This ends focus immediately and records an emergency exit.</p>
+          <button class="danger-button" id="confirm-emergency">End immediately</button>
+          <button class="quiet-button" id="cancel-emergency">Cancel</button>
+        </div>
+      </section>
+
+      <section class="protected-section" id="protected-section">
+        <div class="section-heading">
+          <h2>Protected sites</h2>
+          <span id="site-count"></span>
+        </div>
+        <div id="site-list" class="site-list"></div>
+        <button class="add-site" id="add-current"><span>+</span> Add this site</button>
+      </section>
+
+      <footer id="today-summary">Today · 0m focused · 0 impulses paused</footer>
+    </main>
+    <script src="preview-runtime.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
