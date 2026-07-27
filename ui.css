@@ -4,13 +4,217 @@
   --muted: #6f746d;
   --moss: #496a51;
   --moss-dark: #35533d;
+  --accent-fill: #496a51;
+  --accent-fill-hover: #35533d;
+  --on-accent: #fff;
   --sage: #dfe7dc;
   --sage-soft: #ebeee7;
   --line: #ced6ca;
   --clay: #c9795a;
   --white: #fff;
+  --text-soft: #4f554e;
+  --text-faint: #8b9089;
+  --text-disabled: #92978f;
+  --row-line: #dde1d9;
+  --surface-hover: rgba(235, 238, 231, 0.55);
+  --surface-soft: rgba(235, 238, 231, 0.72);
+  --surface-selected: rgba(235, 238, 231, 0.92);
+  --surface-emphasis: rgba(235, 238, 231, 0.82);
+  --field-bg: rgba(255, 255, 255, 0.52);
+  --field-bg-soft: rgba(255, 255, 255, 0.32);
+  --field-bg-strong: rgba(255, 255, 255, 0.65);
+  --control-border: #8ba08d;
+  --control-border-soft: #b9c4b6;
+  --control-border-strong: #91a590;
+  --control-off: #c9cdc6;
+  --control-knob: #fff;
+  --button-disabled: #9cac9c;
+  --focus-ring: rgba(73, 106, 81, 0.12);
+  --control-shadow: rgba(32, 35, 31, 0.24);
+  --track: #e2e5de;
+  --chart-grid: #d5d9d1;
+  --chart-axis: #bfc5bc;
+  --chart-label: #5f645d;
+  --chart-today: #7f9b84;
+  --chart-area: rgba(73, 106, 81, 0.045);
+  --danger-surface: #f6efeb;
+  --danger-border: #d9c6bd;
+  --danger-text: #694f45;
+  --danger-fill: #7b4f43;
+  --breath-ring: rgba(73, 106, 81, 0.2);
+  --breath-orb-start: #aab6a0;
+  --breath-orb-mid: #71826b;
+  --breath-orb-end: #66775f;
+  --breath-shadow: rgba(65, 81, 62, 0.18);
+  --breath-seed: rgba(255, 255, 255, 0.9);
+  --breath-seed-line: rgba(255, 255, 255, 0.92);
+  --reminder-surface: rgba(229, 235, 226, 0.55);
   --serif: "Iowan Old Style", "Baskerville", "Times New Roman", serif;
   --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #171a17;
+    --ink: #eceee9;
+    --muted: #a7ada5;
+    --moss: #86a98d;
+    --moss-dark: #a9c5ae;
+    --accent-fill: #58705c;
+    --accent-fill-hover: #4e6653;
+    --on-accent: #f4f6f2;
+    --sage: #29332a;
+    --sage-soft: #202720;
+    --line: #343c34;
+    --clay: #df9475;
+    --white: #f4f6f2;
+    --text-soft: #c7ccc5;
+    --text-faint: #929a91;
+    --text-disabled: #717970;
+    --row-line: #2d352e;
+    --surface-hover: rgba(134, 169, 141, 0.08);
+    --surface-soft: rgba(134, 169, 141, 0.1);
+    --surface-selected: rgba(134, 169, 141, 0.14);
+    --surface-emphasis: rgba(134, 169, 141, 0.12);
+    --field-bg: rgba(255, 255, 255, 0.045);
+    --field-bg-soft: rgba(255, 255, 255, 0.025);
+    --field-bg-strong: rgba(255, 255, 255, 0.06);
+    --control-border: #647767;
+    --control-border-soft: #4d5a4f;
+    --control-border-strong: #78917c;
+    --control-off: #4a514b;
+    --control-knob: #edf0eb;
+    --button-disabled: #536257;
+    --focus-ring: rgba(134, 169, 141, 0.22);
+    --control-shadow: rgba(0, 0, 0, 0.38);
+    --track: #2a312b;
+    --chart-grid: #303832;
+    --chart-axis: #465047;
+    --chart-label: #a7ada5;
+    --chart-today: #86a98d;
+    --chart-area: rgba(134, 169, 141, 0.08);
+    --danger-surface: #2d211e;
+    --danger-border: #65463d;
+    --danger-text: #e1a18a;
+    --danger-fill: #9f6553;
+    --breath-ring: rgba(134, 169, 141, 0.23);
+    --breath-orb-start: #8fa28a;
+    --breath-orb-mid: #5f745f;
+    --breath-orb-end: #445744;
+    --breath-shadow: rgba(0, 0, 0, 0.34);
+    --breath-seed: rgba(244, 246, 242, 0.9);
+    --breath-seed-line: rgba(244, 246, 242, 0.92);
+    --reminder-surface: rgba(134, 169, 141, 0.1);
+    color-scheme: dark;
+  }
+}
+
+:root[data-preview-theme="dark"] {
+  --paper: #171a17;
+  --ink: #eceee9;
+  --muted: #a7ada5;
+  --moss: #86a98d;
+  --moss-dark: #a9c5ae;
+  --accent-fill: #58705c;
+  --accent-fill-hover: #4e6653;
+  --on-accent: #f4f6f2;
+  --sage: #29332a;
+  --sage-soft: #202720;
+  --line: #343c34;
+  --clay: #df9475;
+  --white: #f4f6f2;
+  --text-soft: #c7ccc5;
+  --text-faint: #929a91;
+  --text-disabled: #717970;
+  --row-line: #2d352e;
+  --surface-hover: rgba(134, 169, 141, 0.08);
+  --surface-soft: rgba(134, 169, 141, 0.1);
+  --surface-selected: rgba(134, 169, 141, 0.14);
+  --surface-emphasis: rgba(134, 169, 141, 0.12);
+  --field-bg: rgba(255, 255, 255, 0.045);
+  --field-bg-soft: rgba(255, 255, 255, 0.025);
+  --field-bg-strong: rgba(255, 255, 255, 0.06);
+  --control-border: #647767;
+  --control-border-soft: #4d5a4f;
+  --control-border-strong: #78917c;
+  --control-off: #4a514b;
+  --control-knob: #edf0eb;
+  --button-disabled: #536257;
+  --focus-ring: rgba(134, 169, 141, 0.22);
+  --control-shadow: rgba(0, 0, 0, 0.38);
+  --track: #2a312b;
+  --chart-grid: #303832;
+  --chart-axis: #465047;
+  --chart-label: #a7ada5;
+  --chart-today: #86a98d;
+  --chart-area: rgba(134, 169, 141, 0.08);
+  --danger-surface: #2d211e;
+  --danger-border: #65463d;
+  --danger-text: #e1a18a;
+  --danger-fill: #9f6553;
+  --breath-ring: rgba(134, 169, 141, 0.23);
+  --breath-orb-start: #8fa28a;
+  --breath-orb-mid: #5f745f;
+  --breath-orb-end: #445744;
+  --breath-shadow: rgba(0, 0, 0, 0.34);
+  --breath-seed: rgba(244, 246, 242, 0.9);
+  --breath-seed-line: rgba(244, 246, 242, 0.92);
+  --reminder-surface: rgba(134, 169, 141, 0.1);
+  color-scheme: dark;
+}
+
+:root[data-preview-theme="light"] {
+  --paper: #f7f6f2;
+  --ink: #20231f;
+  --muted: #6f746d;
+  --moss: #496a51;
+  --moss-dark: #35533d;
+  --accent-fill: #496a51;
+  --accent-fill-hover: #35533d;
+  --on-accent: #fff;
+  --sage: #dfe7dc;
+  --sage-soft: #ebeee7;
+  --line: #ced6ca;
+  --clay: #c9795a;
+  --white: #fff;
+  --text-soft: #4f554e;
+  --text-faint: #8b9089;
+  --text-disabled: #92978f;
+  --row-line: #dde1d9;
+  --surface-hover: rgba(235, 238, 231, 0.55);
+  --surface-soft: rgba(235, 238, 231, 0.72);
+  --surface-selected: rgba(235, 238, 231, 0.92);
+  --surface-emphasis: rgba(235, 238, 231, 0.82);
+  --field-bg: rgba(255, 255, 255, 0.52);
+  --field-bg-soft: rgba(255, 255, 255, 0.32);
+  --field-bg-strong: rgba(255, 255, 255, 0.65);
+  --control-border: #8ba08d;
+  --control-border-soft: #b9c4b6;
+  --control-border-strong: #91a590;
+  --control-off: #c9cdc6;
+  --control-knob: #fff;
+  --button-disabled: #9cac9c;
+  --focus-ring: rgba(73, 106, 81, 0.12);
+  --control-shadow: rgba(32, 35, 31, 0.24);
+  --track: #e2e5de;
+  --chart-grid: #d5d9d1;
+  --chart-axis: #bfc5bc;
+  --chart-label: #5f645d;
+  --chart-today: #7f9b84;
+  --chart-area: rgba(73, 106, 81, 0.045);
+  --danger-surface: #f6efeb;
+  --danger-border: #d9c6bd;
+  --danger-text: #694f45;
+  --danger-fill: #7b4f43;
+  --breath-ring: rgba(73, 106, 81, 0.2);
+  --breath-orb-start: #aab6a0;
+  --breath-orb-mid: #71826b;
+  --breath-orb-end: #66775f;
+  --breath-shadow: rgba(65, 81, 62, 0.18);
+  --breath-seed: rgba(255, 255, 255, 0.9);
+  --breath-seed-line: rgba(255, 255, 255, 0.92);
+  --reminder-surface: rgba(229, 235, 226, 0.55);
   color-scheme: light;
 }
 
@@ -88,8 +292,8 @@ button {
   width: 100%;
   border: 0;
   border-radius: 9px;
-  background: var(--moss);
-  color: var(--white);
+  background: var(--accent-fill);
+  color: var(--on-accent);
   font-weight: 600;
   letter-spacing: -0.01em;
   cursor: pointer;
@@ -97,7 +301,7 @@ button {
 }
 
 .primary-button:hover {
-  background: var(--moss-dark);
+  background: var(--accent-fill-hover);
 }
 
 .primary-button:active {
@@ -105,15 +309,15 @@ button {
 }
 
 .primary-button:disabled {
-  background: #9cac9c;
+  background: var(--button-disabled);
   cursor: not-allowed;
 }
 
 .field {
   width: 100%;
-  border: 1.5px solid #8ba08d;
+  border: 1.5px solid var(--control-border);
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.52);
+  background: var(--field-bg);
   color: var(--ink);
   outline: none;
   transition: border 160ms ease, box-shadow 160ms ease;
@@ -121,11 +325,11 @@ button {
 
 .field:focus {
   border-color: var(--moss);
-  box-shadow: 0 0 0 3px rgba(73, 106, 81, 0.12);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .field::placeholder {
-  color: #969b94;
+  color: var(--text-disabled);
 }
 
 .icon-button {
@@ -152,7 +356,7 @@ button {
   position: absolute;
   inset: 0;
   border-radius: 99px;
-  background: #c9cdc6;
+  background: var(--control-off);
   transition: background 160ms ease;
   cursor: pointer;
 }
@@ -165,13 +369,13 @@ button {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: white;
-  box-shadow: 0 1px 3px rgba(32, 35, 31, 0.24);
+  background: var(--control-knob);
+  box-shadow: 0 1px 3px var(--control-shadow);
   transition: transform 160ms ease;
 }
 
 .switch input:checked + .switch-track {
-  background: var(--moss);
+  background: var(--accent-fill);
 }
 
 .switch input:checked + .switch-track::after {

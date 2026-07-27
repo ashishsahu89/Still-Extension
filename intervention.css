@@ -14,7 +14,7 @@ body {
 }
 
 .today {
-  color: #4e554e;
+  color: var(--text-soft);
   font-size: 14px;
 }
 
@@ -36,7 +36,7 @@ main {
 
 .breath-ring {
   position: absolute;
-  border: 1px solid rgba(73, 106, 81, 0.2);
+  border: 1px solid var(--breath-ring);
   border-radius: 50%;
   animation: ripple 8s ease-in-out infinite;
   transition:
@@ -68,8 +68,13 @@ main {
   width: 158px;
   height: 158px;
   border-radius: 50%;
-  background: radial-gradient(circle at 38% 32%, #aab6a0, #71826b 72%, #66775f);
-  box-shadow: 0 14px 34px rgba(65, 81, 62, 0.18);
+  background: radial-gradient(
+    circle at 38% 32%,
+    var(--breath-orb-start),
+    var(--breath-orb-mid) 72%,
+    var(--breath-orb-end)
+  );
+  box-shadow: 0 14px 34px var(--breath-shadow);
   animation: breathe 8s ease-in-out infinite;
   transition: transform 480ms ease;
 }
@@ -90,7 +95,7 @@ main {
   width: 2px;
   height: 36px;
   margin-top: 18px;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--breath-seed);
   border-radius: 2px;
 }
 
@@ -101,7 +106,7 @@ main {
   top: -4px;
   width: 25px;
   height: 13px;
-  border: 1.5px solid rgba(255, 255, 255, 0.92);
+  border: 1.5px solid var(--breath-seed-line);
 }
 
 .seed::before {
@@ -162,7 +167,7 @@ h1.focus-heading {
 }
 
 .focus-heading-label {
-  color: #687067;
+  color: var(--muted);
   font-family: var(--sans);
   font-size: 16px;
   font-weight: 600;
@@ -183,10 +188,10 @@ h1.focus-heading {
   width: min(560px, 100%);
   margin: 18px auto 20px;
   padding: 14px 18px;
-  border: 1px solid rgba(73, 106, 81, 0.2);
+  border: 1px solid var(--breath-ring);
   border-radius: 12px;
-  background: rgba(229, 235, 226, 0.55);
-  color: #525a51;
+  background: var(--reminder-surface);
+  color: var(--text-soft);
   font-size: 15px;
   line-height: 1.55;
 }
@@ -253,7 +258,7 @@ h1.focus-heading {
 }
 
 .continue-button:disabled {
-  color: #a4aaa2;
+  color: var(--text-disabled);
   cursor: wait;
 }
 
@@ -263,7 +268,7 @@ h1.focus-heading {
   justify-content: center;
   gap: 7px;
   margin: 17px 0 0;
-  color: #788077;
+  color: var(--muted);
   font-size: 13px;
 }
 

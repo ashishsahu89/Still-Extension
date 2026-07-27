@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Protection · Still</title>
-    <link rel="stylesheet" href="ui.css" />
-    <link rel="stylesheet" href="options.css" />
+    <link rel="stylesheet" href="ui.css?v=0.6.2" />
+    <link rel="stylesheet" href="options.css?v=0.6.2" />
   </head>
   <body>
     <div class="options-app">
@@ -263,6 +263,30 @@
               <svg id="trend-chart" viewBox="0 0 900 244" role="img"></svg>
             </section>
 
+            <section class="category-activity" aria-labelledby="category-activity-title">
+              <div class="section-heading-row">
+                <div>
+                  <h3 id="category-activity-title">Where your time goes</h3>
+                  <p class="subcopy">Only time in your active tab while your browser is in use.</p>
+                </div>
+                <span class="measurement-note" id="measured-time">0m measured</span>
+              </div>
+              <div class="category-list" id="category-list"></div>
+              <div class="ai-pattern" id="ai-pattern" hidden>
+                <span class="ai-pattern-mark" aria-hidden="true">⌁</span>
+                <div>
+                  <p id="ai-pattern-copy"></p>
+                  <small>Created on this device with your browser’s built-in model</small>
+                </div>
+              </div>
+              <div id="ai-insight-controls" hidden>
+                <button class="ai-insight-button" id="explain-pattern" type="button">
+                  Find a pattern on this device
+                </button>
+                <p class="inline-status" id="ai-insight-status" role="status"></p>
+              </div>
+            </section>
+
             <section class="distribution">
               <h3>When distraction shows up</h3>
               <div class="distribution-bar" id="distribution-bar" aria-label="Distraction timing"></div>
@@ -320,6 +344,54 @@
 
             <div class="content-column">
               <section class="settings-section">
+                <div class="setting-row">
+                  <div class="row-copy">
+                    <strong>Active-tab measurement</strong>
+                    <p>Count time only for the domain visible in your active browser tab, while your browser is in use.</p>
+                  </div>
+                  <label class="switch">
+                    <input id="usage-tracking-enabled" type="checkbox" />
+                    <span class="switch-track"></span>
+                    <span class="sr-only">Measure active-tab time</span>
+                  </label>
+                </div>
+              </section>
+              <section class="settings-section ai-settings" id="chrome-ai-settings" aria-label="On-device intelligence" hidden>
+                <div id="ai-supported-settings" hidden>
+                  <div class="setting-row">
+                    <div class="row-copy">
+                      <strong id="chrome-ai-title">On-device intelligence</strong>
+                      <p>Use your browser’s built-in model to categorize unfamiliar sites and explain patterns in plain language.</p>
+                    </div>
+                    <label class="switch">
+                      <input id="chrome-ai-enabled" type="checkbox" />
+                      <span class="switch-track"></span>
+                      <span class="sr-only">Use on-device intelligence</span>
+                    </label>
+                  </div>
+                  <div class="ai-setup" id="ai-setup">
+                    <div>
+                      <strong id="ai-availability-title">Checking on-device intelligence…</strong>
+                      <p id="ai-availability-copy">Still will check whether your browser’s model is available.</p>
+                      <div class="download-progress" id="ai-download-progress" hidden>
+                        <span id="ai-download-bar"></span>
+                      </div>
+                    </div>
+                    <button class="secondary-button compact-button" id="prepare-chrome-ai" type="button">
+                      Check availability
+                    </button>
+                  </div>
+                  <p class="privacy-note">
+                    Still shares only aggregated domains, time, visits, and time of day with the model.
+                    Page addresses, titles, and content are never included, and nothing leaves your device.
+                  </p>
+                </div>
+                <div class="ai-unavailable-note" id="ai-unavailable-note" hidden>
+                  <strong>On-device intelligence isn’t available</strong>
+                  <p>Your browser or device doesn’t currently provide a compatible built-in model. Still’s category insights continue to work without it.</p>
+                </div>
+              </section>
+              <section class="settings-section">
                 <h3>Session history</h3>
                 <div id="session-history" class="history-list"></div>
               </section>
@@ -329,7 +401,7 @@
               </section>
               <section class="settings-section privacy">
                 <h3>Private by design</h3>
-                <p>Still stores your settings, sessions, site activity, and intentions only in Chrome’s local extension storage. It has no account, analytics, ads, or external server.</p>
+                <p>Still stores your settings, sessions, domain-level activity, and intentions only in your browser’s local extension storage. It has no account, analytics, ads, or external server.</p>
               </section>
             </div>
           </section>
@@ -339,6 +411,8 @@
 
     <script src="preview-runtime.js"></script>
     <script src="routine-suggestions.js"></script>
+    <script src="site-categories.js"></script>
+    <script src="chrome-ai.js"></script>
     <script src="options.js"></script>
   </body>
 </html>
