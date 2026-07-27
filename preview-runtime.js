@@ -1,5 +1,46 @@
 /* Local-page preview only. Chrome ignores this shim because its extension API already exists. */
+const previewParams = new URLSearchParams(location.search);
+const previewAIState = previewParams.get("ai");
+if (
+  location.protocol.startsWith("http") &&
+  ["light", "dark"].includes(previewParams.get("theme"))
+) {
+  document.documentElement.dataset.previewTheme = previewParams.get("theme");
+}
+if (
+  location.protocol.startsWith("http") &&
+  ["available", "downloadable", "downloading", "unavailable", "unsupported"].includes(previewAIState)
+) {
+  globalThis.StillPreviewLanguageModel = previewAIState === "unsupported" ? {} : {
+    async availability() {
+      return previewAIState;
+    },
+    async create(options = {}) {
+      if (previewAIState === "unavailable") {
+        throw new Error("The preview model is unavailable.");
+      }
+      if (typeof options.monitor === "function") {
+        options.monitor({
+          addEventListener(type, listener) {
+            if (type === "downloadprogress") listener({ loaded: 1 });
+          }
+        });
+      }
+      return {
+        async prompt(prompt) {
+          if (String(prompt).includes('"classifications"')) {
+            return JSON.stringify({ classifications: [] });
+          }
+          return "Your active time is concentrated in a few familiar categories.";
+        },
+        async destroy() {}
+      };
+    }
+  };
+}
+
 if (typeof chrome === "undefined" || !chrome.storage?.local) {
+
   const dateKey = (date) => date.toLocaleDateString("en-CA");
   const atLocalTime = (date, hour, minute = 0) => {
     const value = new Date(date);
@@ -14,6 +55,8 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
 
   const stats = {};
   const siteStats = {};
+  const usageStats = {};
+  const usageEvents = [];
   const impulseEvents = [];
   const focusSessions = [];
   const today = new Date();
@@ -63,6 +106,24 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
     }
     siteStats[key] = siteDay;
 
+    const usageDay = {
+      "github.com": { usageSeconds: (18 + (offset % 4) * 4) * 60 },
+      "youtube.com": { usageSeconds: (10 + (offset % 5) * 3) * 60 },
+      "mail.google.com": { usageSeconds: (7 + (offset % 3) * 2) * 60 },
+      "reddit.com": { usageSeconds: (6 + (offset % 4) * 2) * 60 },
+      "wikipedia.org": { usageSeconds: (4 + (offset % 2) * 3) * 60 }
+    };
+    usageStats[key] = usageDay;
+    Object.entries(usageDay).forEach(([host, activity], index) => {
+      const startedAt = atLocalTime(date, [10, 15, 11, 20, 14][index], 5 + index * 4);
+      usageEvents.push({
+        host,
+        startedAt,
+        endedAt: startedAt + activity.usageSeconds * 1000,
+        usageSeconds: activity.usageSeconds
+      });
+    });
+
     const perSession = Math.floor((focusedMinutes * 60) / sessions);
     for (let index = 0; index < sessions; index += 1) {
       const startedAt = atLocalTime(date, index === 0 ? 9 : 14, 20 + index * 15);
@@ -90,11 +151,17 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
     mindfulMode: true,
     strictFocus: true,
     pauseSeconds: 8,
+    usageTrackingEnabled: true,
+    chromeAIEnabled: false,
+    aiCategoryCache: {},
+    aiInsightCache: {},
     focus: null,
     passes: {},
     passStarts: {},
     stats,
     siteStats,
+    usageStats,
+    usageEvents,
     impulseEvents,
     focusSessions,
     routines: [
@@ -139,7 +206,7 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
       }
     ]
   };
-  if (new URLSearchParams(location.search).get("focus") === "true") {
+  if (previewParams.get("focus") === "true") {
     previewState.focus = {
       startedAt: Date.now() - 7 * 60000,
       endAt: Date.now() + 18 * 60000,

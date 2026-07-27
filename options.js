@@ -33,6 +33,9 @@ const PERIOD_COPY = {
 let currentPeriod = "week";
 let savedTimer;
 let insightsData = null;
+let currentCategoryInsights = null;
+let chromeAIStatusRequest = 0;
+let chromeAICapability = { state: "checking", supported: false };
 let routineFormOpen = false;
 let currentRoutineSuggestion = null;
 let reviewingRoutineSuggestion = false;
@@ -145,6 +148,22 @@ function formatUsage(seconds) {
   if (!seconds) return "0m";
   if (seconds < 60) return "<1m";
   return formatDuration(seconds);
+}
+
+function categoryCacheLookup(cache = {}) {
+  return Object.fromEntries(
+    Object.entries(cache).flatMap(([host, value]) => {
+      const category = typeof value === "string" ? value : value?.category;
+      return category ? [[host, category]] : [];
+    })
+  );
+}
+
+function displayHost(host) {
+  const protectedSite = (insightsData?.protectedSites || []).find(
+    (site) => host === site.host || host.endsWith(`.${site.host}`)
+  );
+  return protectedSite?.label || labelFromHost(host);
 }
 
 function occurrenceOnDate(routine, date) {
@@ -709,6 +728,458 @@ function renderTrend(period, range) {
   svg.innerHTML = markup;
 }
 
+function renderCategoryActivity(range) {
+  const container = $("#category-list");
+  container.replaceChildren();
+  if (!globalThis.StillSiteCategories) {
+    const empty = document.createElement("p");
+    empty.className = "category-empty";
+    empty.textContent = "Category insights could not be loaded.";
+    container.append(empty);
+    return;
+  }
+
+  currentCategoryInsights = StillSiteCategories.aggregateCategoryInsights({
+    usageStats: insightsData.usageStats || {},
+    rangeStart: range.start.getTime(),
+    rangeEnd: range.end.getTime(),
+    cachedCategories:
+      insightsData.chromeAIEnabled === true
+        ? categoryCacheLookup(insightsData.aiCategoryCache)
+        : {}
+  });
+  $("#measured-time").textContent =
+    insightsData.usageTrackingEnabled === false
+      ? `Paused · ${formatUsage(currentCategoryInsights.totalSeconds)} measured`
+      : `${formatUsage(currentCategoryInsights.totalSeconds)} measured`;
+
+  const categories = currentCategoryInsights.categories
+    .filter((category) => category.seconds > 0)
+    .slice(0, 6);
+  if (!categories.length) {
+    const empty = document.createElement("p");
+    empty.className = "category-empty";
+    empty.textContent =
+      "Use Chrome normally and Still will begin showing where your active time goes.";
+    container.append(empty);
+    $("#explain-pattern").disabled = true;
+    return;
+  }
+
+  $("#explain-pattern").disabled = false;
+  $("#explain-pattern").textContent =
+    insightsData.chromeAIEnabled === true
+      ? "Find a pattern on this device"
+      : "Set up on-device intelligence";
+  for (const category of categories) {
+    const row = document.createElement("div");
+    row.className = "category-row";
+
+    const heading = document.createElement("div");
+    heading.className = "category-row-heading";
+    const name = document.createElement("strong");
+    name.textContent = category.category;
+    const total = document.createElement("span");
+    total.textContent =
+      `${formatUsage(category.seconds)} · ${Math.round(category.percent)}%`;
+    heading.append(name, total);
+
+    const track = document.createElement("div");
+    track.className = "category-track";
+    const fill = document.createElement("span");
+    fill.style.setProperty(
+      "--category-width",
+      `${Math.max(2, Math.min(100, category.percent))}%`
+    );
+    track.append(fill);
+
+    const detail = document.createElement("div");
+    detail.className = "category-row-sites";
+    const leaders = document.createElement("span");
+    leaders.textContent = category.leaders
+      .slice(0, 3)
+      .map((site) => `${displayHost(site.host)} ${formatUsage(site.seconds)}`)
+      .join(" · ");
+    const siteCount = document.createElement("span");
+    siteCount.textContent =
+      `${category.domains.length} ${category.domains.length === 1 ? "site" : "sites"}`;
+    detail.append(leaders, siteCount);
+    row.append(heading, track, detail);
+    container.append(row);
+  }
+}
+
+function daypartKey(timestamp) {
+  const hour = new Date(timestamp).getHours();
+  if (hour < 6) return "night";
+  if (hour < 12) return "morning";
+  if (hour < 18) return "afternoon";
+  return "evening";
+}
+
+function domainEventAggregates(range) {
+  const totals = new Map();
+  for (const event of insightsData.usageEvents || []) {
+    if (!inRange(event.startedAt, range)) continue;
+    const host = globalThis.StillSiteCategories?.normalizeHost(event.host);
+    if (!host) continue;
+    const row = totals.get(host) || {
+      sessionCount: 0,
+      daypartSeconds: {
+        morning: 0,
+        afternoon: 0,
+        evening: 0,
+        night: 0
+      }
+    };
+    row.sessionCount += 1;
+    row.daypartSeconds[daypartKey(event.startedAt)] += Math.max(
+      0,
+      Number(event.usageSeconds) || 0
+    );
+    totals.set(host, row);
+  }
+  return totals;
+}
+
+function insightSummary(range) {
+  const eventAggregates = domainEventAggregates(range);
+  const categories = currentCategoryInsights?.categories || [];
+  const domains = categories
+    .flatMap((category) =>
+      category.domains.map((domain) => ({
+        domain: domain.host,
+        category: category.category,
+        activeSeconds: domain.seconds,
+        sessionCount:
+          eventAggregates.get(domain.host)?.sessionCount ||
+          domain.sessions ||
+          domain.visits ||
+          0,
+        daypartSeconds: eventAggregates.get(domain.host)?.daypartSeconds
+      }))
+    )
+    .sort((a, b) => b.activeSeconds - a.activeSeconds)
+    .slice(0, 30);
+  const totalDayparts = {
+    morning: 0,
+    afternoon: 0,
+    evening: 0,
+    night: 0
+  };
+  for (const value of eventAggregates.values()) {
+    for (const key of Object.keys(totalDayparts)) {
+      totalDayparts[key] += value.daypartSeconds[key] || 0;
+    }
+  }
+  return {
+    rangeDays: Math.max(
+      1,
+      Math.round((range.end.getTime() - range.start.getTime()) / 86400000)
+    ),
+    totalActiveSeconds: currentCategoryInsights?.totalSeconds || 0,
+    totalSessions: domains.reduce((sum, domain) => sum + domain.sessionCount, 0),
+    daypartSeconds: totalDayparts,
+    categories: categories.slice(0, 8).map((category) => ({
+      category: category.category,
+      activeSeconds: category.seconds,
+      sessionCount: category.sessions || category.visits || 0
+    })),
+    domains
+  };
+}
+
+function stableFingerprint(value) {
+  const input = JSON.stringify(value);
+  let hash = 2166136261;
+  for (const character of input) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function currentInsightCacheKey(range) {
+  return `${currentPeriod}:${localDateKey(range.start)}:${stableFingerprint(
+    insightSummary(range)
+  )}`;
+}
+
+function renderCachedAIInsight(range) {
+  const pattern = $("#ai-pattern");
+  if (!canUseChromeAI()) {
+    pattern.hidden = true;
+    return;
+  }
+  const cached =
+    insightsData.chromeAIEnabled === true
+      ? insightsData.aiInsightCache?.[currentInsightCacheKey(range)]
+      : null;
+  if (!cached?.insight) {
+    pattern.hidden = true;
+    return;
+  }
+  $("#ai-pattern-copy").textContent = cached.insight;
+  pattern.hidden = false;
+}
+
+function availabilityCopy(result, enabled) {
+  if (!enabled) {
+    return {
+      title: "Off",
+      copy: "Turn this on to use your browser’s built-in model.",
+      action: "Turn on and check",
+      disabled: false
+    };
+  }
+  if (result.state === "available") {
+    return {
+      title: "Ready on this device",
+      copy: "Still can now improve unfamiliar categories and explain patterns.",
+      action: "Refresh categories",
+      disabled: false
+    };
+  }
+  if (result.state === "downloadable") {
+    return {
+      title: "Model ready to download",
+      copy: "Chrome needs a one-time model download before Still can use it.",
+      action: "Download model",
+      disabled: false
+    };
+  }
+  if (result.state === "downloading") {
+    return {
+      title: "Model download in progress",
+      copy: "Keep Chrome open while the on-device model finishes downloading.",
+      action: "Continue setup",
+      disabled: false
+    };
+  }
+  if (result.state === "unsupported") {
+    return {
+      title: "Not supported in this browser",
+      copy: "This browser does not provide a compatible built-in model.",
+      action: "Unavailable",
+      disabled: true
+    };
+  }
+  if (result.state === "unavailable") {
+    return {
+      title: "Not available on this device",
+      copy: "This browser or device does not currently meet the model requirements.",
+      action: "Unavailable",
+      disabled: true
+    };
+  }
+  return {
+    title: "Couldn’t check on-device intelligence",
+    copy: result.error || "Try checking availability again.",
+    action: "Try again",
+    disabled: false
+  };
+}
+
+function canUseChromeAI(result = chromeAICapability) {
+  return ["available", "downloadable", "downloading"].includes(result?.state);
+}
+
+function renderChromeAICapability(result) {
+  chromeAICapability = result;
+  const settings = $("#chrome-ai-settings");
+  const supportedSettings = $("#ai-supported-settings");
+  const unavailableNote = $("#ai-unavailable-note");
+  const insightControls = $("#ai-insight-controls");
+  const unsupported = result?.state === "unsupported";
+  const unavailable = result?.state === "unavailable";
+  const showSupportedSettings =
+    !unsupported && !unavailable && result?.state !== "checking";
+
+  settings.hidden = unsupported || result?.state === "checking";
+  supportedSettings.hidden = !showSupportedSettings;
+  unavailableNote.hidden = !unavailable;
+  insightControls.hidden = !canUseChromeAI(result);
+
+  if (!canUseChromeAI(result)) {
+    $("#ai-pattern").hidden = true;
+    $("#ai-insight-status").textContent = "";
+  }
+}
+
+function setChromeAIStatus(copy) {
+  $("#ai-availability-title").textContent = copy.title;
+  $("#ai-availability-copy").textContent = copy.copy;
+  $("#prepare-chrome-ai").textContent = copy.action;
+  $("#prepare-chrome-ai").disabled = copy.disabled;
+}
+
+async function refreshChromeAIStatus() {
+  const request = ++chromeAIStatusRequest;
+  if (!globalThis.StillChromeAI) {
+    renderChromeAICapability({ state: "unsupported", supported: false });
+    return;
+  }
+  const result = await StillChromeAI.getAvailability();
+  if (request !== chromeAIStatusRequest) return;
+  renderChromeAICapability(result);
+  if (result.state === "unsupported" || result.state === "unavailable") return;
+
+  const enabled = insightsData.chromeAIEnabled === true;
+  setChromeAIStatus(availabilityCopy(result, enabled));
+  if (location.hash.slice(1) === "insights") renderInsights();
+}
+
+function unknownDomainAggregates() {
+  const ninetyDaysAgo = startOfDay(addDays(new Date(), -89));
+  const range = { start: ninetyDaysAgo, end: addDays(startOfDay(), 1) };
+  const all = StillSiteCategories.aggregateCategoryInsights({
+    usageStats: insightsData.usageStats || {},
+    rangeStart: range.start.getTime(),
+    rangeEnd: range.end.getTime(),
+    cachedCategories:
+      insightsData.chromeAIEnabled === true
+        ? categoryCacheLookup(insightsData.aiCategoryCache)
+        : {}
+  });
+  const eventAggregates = domainEventAggregates(range);
+  const other = all.categories.find((category) => category.category === "Other");
+  return (other?.domains || []).slice(0, 30).map((domain) => ({
+    domain: domain.host,
+    activeSeconds: domain.seconds,
+    sessionCount:
+      eventAggregates.get(domain.host)?.sessionCount ||
+      domain.sessions ||
+      domain.visits ||
+      0,
+    daypartSeconds: eventAggregates.get(domain.host)?.daypartSeconds
+  }));
+}
+
+async function prepareChromeAI() {
+  if (!globalThis.StillChromeAI || !globalThis.StillSiteCategories) return;
+  let enabledChanged = false;
+  if (insightsData.chromeAIEnabled !== true) {
+    insightsData.chromeAIEnabled = true;
+    $("#chrome-ai-enabled").checked = true;
+    enabledChanged = true;
+  }
+
+  const progress = $("#ai-download-progress");
+  const bar = $("#ai-download-bar");
+  progress.hidden = false;
+  bar.style.width = "0%";
+  setChromeAIStatus({
+    title: "Preparing on-device intelligence…",
+    copy: "This can take a few minutes the first time.",
+    action: "Preparing…",
+    disabled: true
+  });
+
+  const domains = unknownDomainAggregates();
+  const onDownloadProgress = ({ percent }) => {
+    progress.hidden = false;
+    bar.style.width = `${percent}%`;
+    $("#ai-availability-copy").textContent = `Downloading on-device model · ${percent}%`;
+  };
+  const result = domains.length
+    ? await StillChromeAI.classifyDomains(domains, {
+        userInitiated: true,
+        onDownloadProgress
+      })
+    : await StillChromeAI.createSession({
+        userInitiated: true,
+        onDownloadProgress
+      });
+
+  if (result.session?.destroy) await result.session.destroy();
+  progress.hidden = true;
+  if (!result.ok) {
+    if (["unsupported", "unavailable"].includes(result.state)) {
+      insightsData.chromeAIEnabled = false;
+      $("#chrome-ai-enabled").checked = false;
+      await chrome.storage.local.set({ chromeAIEnabled: false });
+    } else if (enabledChanged) {
+      await chrome.storage.local.set({ chromeAIEnabled: true });
+    }
+    setChromeAIStatus(
+      availabilityCopy(
+        { state: result.state || "error", error: result.error },
+        true
+      )
+    );
+    return;
+  }
+
+  if (result.suggestions) {
+    const now = Date.now();
+    const aiCategoryCache = { ...(insightsData.aiCategoryCache || {}) };
+    for (const suggestion of result.suggestions) {
+      if (
+        suggestion.category !== "Other" &&
+        Number(suggestion.confidence) >= 0.6
+      ) {
+        aiCategoryCache[suggestion.domain] = {
+          category: suggestion.category,
+          confidence: suggestion.confidence,
+          updatedAt: now
+        };
+      }
+    }
+    insightsData.aiCategoryCache = aiCategoryCache;
+    await chrome.storage.local.set({
+      chromeAIEnabled: true,
+      aiCategoryCache
+    });
+  } else if (enabledChanged) {
+    await chrome.storage.local.set({ chromeAIEnabled: true });
+  }
+  await refreshChromeAIStatus();
+  renderInsights();
+}
+
+async function explainCurrentPattern() {
+  if (!canUseChromeAI()) return;
+  const range = rangeForPeriod(currentPeriod);
+  if (insightsData.chromeAIEnabled !== true) {
+    setView("data");
+    $("#chrome-ai-enabled").focus();
+    return;
+  }
+  if (!currentCategoryInsights?.totalSeconds) return;
+
+  const button = $("#explain-pattern");
+  const status = $("#ai-insight-status");
+  button.disabled = true;
+  button.textContent = "Looking for a pattern…";
+  status.textContent = "Your browser is analyzing aggregated activity on this device.";
+  const result = await StillChromeAI.explainInsights(insightSummary(range), {
+    userInitiated: true,
+    onDownloadProgress({ percent }) {
+      status.textContent = `Preparing Chrome’s on-device model · ${percent}%`;
+    }
+  });
+  button.disabled = false;
+  button.textContent = "Find another pattern on this device";
+  if (!result.ok) {
+    status.textContent = result.error || "The on-device model could not explain this pattern.";
+    return;
+  }
+
+  const key = currentInsightCacheKey(range);
+  const aiInsightCache = {
+    ...(insightsData.aiInsightCache || {}),
+    [key]: { insight: result.insight, generatedAt: Date.now() }
+  };
+  const entries = Object.entries(aiInsightCache)
+    .sort((a, b) => (b[1]?.generatedAt || 0) - (a[1]?.generatedAt || 0))
+    .slice(0, 12);
+  insightsData.aiInsightCache = Object.fromEntries(entries);
+  await chrome.storage.local.set({ aiInsightCache: insightsData.aiInsightCache });
+  $("#ai-pattern-copy").textContent = result.insight;
+  $("#ai-pattern").hidden = false;
+  status.textContent = "";
+}
+
 function timingBucket(timestamp) {
   const hour = new Date(timestamp).getHours();
   if (hour < 12) return 0;
@@ -851,6 +1322,8 @@ function renderInsights() {
     button.setAttribute("aria-pressed", String(active));
   }
   renderTrend(currentPeriod, range);
+  renderCategoryActivity(range);
+  renderCachedAIInsight(range);
   renderDistribution(range);
   const insightRoutine = $("#insight-routine");
   if (currentRoutineSuggestion) {
@@ -876,23 +1349,33 @@ async function render() {
     "mindfulMode",
     "strictFocus",
     "pauseSeconds",
+    "usageTrackingEnabled",
     "protectedSites",
     "stats",
     "siteStats",
+    "usageStats",
+    "usageEvents",
     "impulseEvents",
     "focusSessions",
     "intentions",
     "routines",
-    "dismissedRoutineSuggestions"
+    "dismissedRoutineSuggestions",
+    "chromeAIEnabled",
+    "aiCategoryCache",
+    "aiInsightCache"
   ]);
   $("#mindful-mode").checked = insightsData.mindfulMode !== false;
   $("#strict-focus").checked = insightsData.strictFocus !== false;
   $("#pause-seconds").value = String(insightsData.pauseSeconds || 8);
+  $("#usage-tracking-enabled").checked =
+    insightsData.usageTrackingEnabled !== false;
+  $("#chrome-ai-enabled").checked = insightsData.chromeAIEnabled === true;
   renderSites(insightsData.protectedSites || []);
   renderRoutineSuggestion();
   renderRoutines();
   renderHistory();
   setView(location.hash.slice(1) || "protection", { updateHash: false });
+  void refreshChromeAIStatus();
 }
 
 $("#mindful-mode").addEventListener("change", (event) =>
@@ -904,6 +1387,22 @@ $("#strict-focus").addEventListener("change", (event) =>
 $("#pause-seconds").addEventListener("change", (event) =>
   saveSetting("pauseSeconds", Number(event.target.value))
 );
+$("#usage-tracking-enabled").addEventListener("change", (event) => {
+  insightsData.usageTrackingEnabled = event.target.checked;
+  saveSetting("usageTrackingEnabled", event.target.checked);
+});
+$("#chrome-ai-enabled").addEventListener("change", async (event) => {
+  insightsData.chromeAIEnabled = event.target.checked;
+  if (!event.target.checked) {
+    $("#ai-pattern").hidden = true;
+    $("#ai-insight-status").textContent = "";
+  }
+  await saveSetting("chromeAIEnabled", event.target.checked);
+  await refreshChromeAIStatus();
+  renderInsights();
+});
+$("#prepare-chrome-ai").addEventListener("click", prepareChromeAI);
+$("#explain-pattern").addEventListener("click", explainCurrentPattern);
 
 $("#new-routine").addEventListener("click", () => openRoutineForm());
 $("#cancel-routine").addEventListener("click", closeRoutineForm);

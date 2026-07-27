@@ -14,6 +14,13 @@ const DEFAULTS = {
   passStarts: {},
   stats: {},
   siteStats: {},
+  usageStats: {},
+  usageEvents: [],
+  usageTracker: null,
+  usageTrackingEnabled: true,
+  chromeAIEnabled: false,
+  aiCategoryCache: {},
+  aiInsightCache: {},
   impulseEvents: [],
   focusSessions: [],
   intentions: [],
@@ -27,9 +34,13 @@ const DEFAULTS = {
 const EXIT_COOLDOWN_MS = 20000;
 const ROUTINE_NOTICE_MS = 5 * 60 * 1000;
 const ROUTINE_ALARM_PREFIX = "routine:";
-const CURRENT_STORAGE_SCHEMA = 1;
+const CURRENT_STORAGE_SCHEMA = 2;
 const RAW_EVENT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const DAILY_RETENTION_MS = 550 * 24 * 60 * 60 * 1000;
+const USAGE_HEARTBEAT_ALARM = "usage-heartbeat";
+const USAGE_HEARTBEAT_MINUTES = 1;
+const MAX_USAGE_GAP_MS = 5 * 60 * 1000;
+const MAX_USAGE_EVENTS = 5000;
 const STRICT_RULE_ID = 10001;
 const PASS_SCRIPT_PREFIX = "still-pass-";
 
@@ -74,6 +85,16 @@ function pruneStoredHistory(data, now = Date.now()) {
   return {
     stats: pruneDatedRecord(data.stats, dailyCutoff),
     siteStats: pruneDatedRecord(data.siteStats, dailyCutoff),
+    usageStats: pruneDatedRecord(data.usageStats, dailyCutoff),
+    usageEvents: (Array.isArray(data.usageEvents) ? data.usageEvents : [])
+      .filter(
+        (event) =>
+          validStoredHost(normalizeHost(event?.host)) &&
+          Number.isFinite(event?.startedAt) &&
+          Number.isFinite(event?.endedAt) &&
+          event.endedAt >= rawCutoff
+      )
+      .slice(0, MAX_USAGE_EVENTS),
     impulseEvents: (Array.isArray(data.impulseEvents) ? data.impulseEvents : [])
       .filter((event) => Number.isFinite(event?.createdAt) && event.createdAt >= rawCutoff)
       .slice(0, 2000),
@@ -99,6 +120,10 @@ async function migrateStorage() {
   while (version < CURRENT_STORAGE_SCHEMA) {
     if (version === 0) {
       version = 1;
+      continue;
+    }
+    if (version === 1) {
+      version = 2;
       continue;
     }
     throw new Error(`No storage migration is available from version ${version}`);
@@ -372,6 +397,211 @@ function addSiteUsage(siteStats, host, startedAt, endedAt) {
   activity.usageSeconds += seconds;
   day[host] = activity;
   return { ...siteStats, [key]: day };
+}
+
+function usageHost(url) {
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) return "";
+    const host = normalizeHost(parsed.hostname);
+    return validStoredHost(host) ? host : "";
+  } catch {
+    return "";
+  }
+}
+
+function normalizedUsageActivity(activity = {}) {
+  return {
+    usageSeconds:
+      Number.isFinite(activity?.usageSeconds) && activity.usageSeconds > 0
+        ? activity.usageSeconds
+        : 0
+  };
+}
+
+function addDailyUsage(
+  usageStats,
+  host,
+  startedAt,
+  endedAt,
+  totalSeconds = Math.max(0, Math.round((endedAt - startedAt) / 1000))
+) {
+  let updated = { ...(usageStats || {}) };
+  let cursor = startedAt;
+  let remainingSeconds = totalSeconds;
+  while (cursor < endedAt) {
+    const nextDay = new Date(cursor);
+    nextDay.setHours(24, 0, 0, 0);
+    const segmentEnd = Math.min(endedAt, nextDay.getTime());
+    const seconds =
+      segmentEnd === endedAt
+        ? remainingSeconds
+        : Math.min(
+            remainingSeconds,
+            Math.max(0, Math.floor((segmentEnd - cursor) / 1000))
+          );
+    if (seconds) {
+      const key = dateKey(cursor);
+      const day = { ...(updated[key] || {}) };
+      const activity = normalizedUsageActivity(day[host]);
+      activity.usageSeconds += seconds;
+      day[host] = activity;
+      updated = { ...updated, [key]: day };
+    }
+    remainingSeconds -= seconds;
+    cursor = segmentEnd;
+  }
+  return updated;
+}
+
+function validUsageTracker(tracker) {
+  return (
+    tracker &&
+    Number.isInteger(tracker.tabId) &&
+    Number.isInteger(tracker.windowId) &&
+    validStoredHost(normalizeHost(tracker.host)) &&
+    Number.isFinite(tracker.checkpointAt) &&
+    Number.isFinite(tracker.eventStartedAt) &&
+    Number.isFinite(tracker.eventUsageSeconds)
+  );
+}
+
+async function flushUsageTracker({ endEvent = false, now = Date.now() } = {}) {
+  const data = await chrome.storage.local.get([
+    "usageTracker",
+    "usageStats",
+    "usageEvents"
+  ]);
+  if (!validUsageTracker(data.usageTracker)) {
+    if (data.usageTracker) await chrome.storage.local.set({ usageTracker: null });
+    return null;
+  }
+
+  const tracker = {
+    ...data.usageTracker,
+    host: normalizeHost(data.usageTracker.host)
+  };
+  const rawElapsed = Math.max(0, now - tracker.checkpointAt);
+  const elapsed = Math.min(rawElapsed, MAX_USAGE_GAP_MS);
+  const countedEndAt = tracker.checkpointAt + elapsed;
+  const addedSeconds = Math.max(0, Math.round(elapsed / 1000));
+  let usageStats = data.usageStats || {};
+  if (addedSeconds) {
+    usageStats = addDailyUsage(
+      usageStats,
+      tracker.host,
+      tracker.checkpointAt,
+      countedEndAt,
+      addedSeconds
+    );
+  }
+  usageStats = pruneDatedRecord(
+    usageStats,
+    now - DAILY_RETENTION_MS
+  );
+
+  const eventUsageSeconds = tracker.eventUsageSeconds + addedSeconds;
+  if (!endEvent) {
+    const usageTracker = {
+      ...tracker,
+      checkpointAt: now,
+      eventUsageSeconds
+    };
+    await chrome.storage.local.set({ usageStats, usageTracker });
+    return usageTracker;
+  }
+
+  let usageEvents = Array.isArray(data.usageEvents) ? data.usageEvents : [];
+  if (eventUsageSeconds > 0) {
+    usageEvents = [
+      {
+        host: tracker.host,
+        startedAt: tracker.eventStartedAt,
+        endedAt: now,
+        usageSeconds: eventUsageSeconds
+      },
+      ...usageEvents
+    ];
+  }
+  const rawCutoff = now - RAW_EVENT_RETENTION_MS;
+  usageEvents = usageEvents
+    .filter(
+      (event) =>
+        validStoredHost(normalizeHost(event?.host)) &&
+        Number.isFinite(event?.startedAt) &&
+        Number.isFinite(event?.endedAt) &&
+        event.endedAt >= rawCutoff
+    )
+    .slice(0, MAX_USAGE_EVENTS);
+  await chrome.storage.local.set({
+    usageStats,
+    usageEvents,
+    usageTracker: null
+  });
+  return null;
+}
+
+async function currentTrackableTab() {
+  const { usageTrackingEnabled } =
+    await chrome.storage.local.get("usageTrackingEnabled");
+  if (usageTrackingEnabled === false) return null;
+  const idleState = await chrome.idle.queryState(60);
+  if (idleState !== "active") return null;
+  const focusedWindow = await chrome.windows.getLastFocused();
+  if (
+    !focusedWindow ||
+    focusedWindow.focused === false ||
+    focusedWindow.id === chrome.windows.WINDOW_ID_NONE
+  ) {
+    return null;
+  }
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    windowId: focusedWindow.id
+  });
+  const host = usageHost(tab?.url);
+  if (!tab || !Number.isInteger(tab.id) || !host) return null;
+  return { tabId: tab.id, windowId: focusedWindow.id, host };
+}
+
+function ensureUsageHeartbeat() {
+  chrome.alarms.create(USAGE_HEARTBEAT_ALARM, {
+    periodInMinutes: USAGE_HEARTBEAT_MINUTES
+  });
+}
+
+async function pauseUsageTracking() {
+  await flushUsageTracker({ endEvent: true });
+  ensureUsageHeartbeat();
+}
+
+async function reconcileUsageTracker() {
+  const now = Date.now();
+  const current = await currentTrackableTab();
+  const { usageTracker } = await chrome.storage.local.get("usageTracker");
+  const trackerMatches =
+    validUsageTracker(usageTracker) &&
+    current &&
+    usageTracker.tabId === current.tabId &&
+    usageTracker.windowId === current.windowId &&
+    normalizeHost(usageTracker.host) === current.host;
+
+  if (trackerMatches) {
+    await flushUsageTracker({ now });
+  } else {
+    await flushUsageTracker({ endEvent: true, now });
+    if (current) {
+      await chrome.storage.local.set({
+        usageTracker: {
+          ...current,
+          checkpointAt: now,
+          eventStartedAt: now,
+          eventUsageSeconds: 0
+        }
+      });
+    }
+  }
+  ensureUsageHeartbeat();
 }
 
 function closePasses(data, endedAt = Date.now()) {
@@ -1021,6 +1251,7 @@ function reconcileState() {
   reconcilePromise = (async () => {
     await migrateStorage();
     await ensureDefaults();
+    await reconcileUsageTracker();
     await restoreFocusState();
     await restorePassState();
     await reconcileRoutineState();
@@ -1039,6 +1270,11 @@ chrome.runtime.onStartup.addListener(() => {
 void runStateTask("initial-reconcile", reconcileState);
 
 async function handleAlarm(alarm) {
+  if (alarm.name === USAGE_HEARTBEAT_ALARM) {
+    await reconcileUsageTracker();
+    return;
+  }
+
   if (alarm.name === "focus-complete") {
     const { focus } = await chrome.storage.local.get("focus");
     if (!focus) return;
@@ -1095,6 +1331,31 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   void runStateTask(`alarm:${alarm.name}`, () => handleAlarm(alarm));
 });
 
+chrome.tabs.onActivated.addListener(() => {
+  void runStateTask("usage-tab-activated", reconcileUsageTracker);
+});
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+  if (!changeInfo.url) return;
+  void runStateTask("usage-tab-url-changed", reconcileUsageTracker);
+});
+chrome.tabs.onRemoved.addListener(() => {
+  void runStateTask("usage-tab-removed", reconcileUsageTracker);
+});
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  void runStateTask(
+    "usage-window-focus-changed",
+    windowId === chrome.windows.WINDOW_ID_NONE
+      ? pauseUsageTracking
+      : reconcileUsageTracker
+  );
+});
+chrome.idle.onStateChanged.addListener((state) => {
+  void runStateTask(
+    "usage-idle-state-changed",
+    state === "active" ? reconcileUsageTracker : pauseUsageTracking
+  );
+});
+
 async function handleNotificationButton(notificationId, buttonIndex) {
   const target = parseRoutineTarget(notificationId);
   if (!target) return;
@@ -1116,8 +1377,18 @@ chrome.notifications.onButtonClicked.addListener((notificationId, buttonIndex) =
 
 if (chrome.storage?.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || (!changes.routines && !changes.protectedSites)) return;
-    void runStateTask("settings-reconcile", reconcileRoutineState);
+    if (area !== "local") return;
+    if (changes.routines || changes.protectedSites) {
+      void runStateTask("settings-reconcile", reconcileRoutineState);
+    }
+    if (changes.usageTrackingEnabled) {
+      void runStateTask(
+        "usage-setting-changed",
+        changes.usageTrackingEnabled.newValue === false
+          ? pauseUsageTracking
+          : reconcileUsageTracker
+      );
+    }
   });
 }
 

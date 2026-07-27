@@ -135,7 +135,7 @@ h2 {
   display: flex;
   align-items: center;
   min-height: 37px;
-  border-bottom: 1px solid #dde1d9;
+  border-bottom: 1px solid var(--row-line);
 }
 
 .site-icon {
@@ -200,7 +200,7 @@ footer {
   width: 92px;
   height: 92px;
   margin: 0 auto 13px;
-  border: 1px solid #b7c5b4;
+  border: 1px solid var(--control-border-soft);
   border-radius: 50%;
   animation: breathe 5s ease-in-out infinite;
 }
@@ -264,7 +264,7 @@ footer {
 }
 
 .exit-confirm:disabled {
-  background: #aeb8ad;
+  background: var(--button-disabled);
   cursor: not-allowed;
 }
 
@@ -293,15 +293,15 @@ footer {
 .emergency-panel {
   margin-top: 11px;
   padding: 12px;
-  border: 1px solid #d9c6bd;
+  border: 1px solid var(--danger-border);
   border-radius: 9px;
-  background: #f6efeb;
+  background: var(--danger-surface);
   text-align: center;
 }
 
 .emergency-panel p {
   margin: 0 0 10px;
-  color: #694f45;
+  color: var(--danger-text);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -311,8 +311,8 @@ footer {
   padding: 0 12px;
   border: 0;
   border-radius: 7px;
-  background: #7b4f43;
-  color: white;
+  background: var(--danger-fill);
+  color: var(--white);
   font-weight: 650;
   cursor: pointer;
 }

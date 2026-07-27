@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Still — Focus on purpose",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "minimum_chrome_version": "101",
   "description": "Pause autopilot browsing, choose your intention, and protect focused time.",
   "permissions": [
     "alarms",
     "declarativeNetRequest",
+    "idle",
     "notifications",
     "scripting",
     "storage",
