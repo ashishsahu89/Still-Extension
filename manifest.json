@@ -1,11 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Still — Focus on purpose",
-  "version": "0.3.0",
+  "version": "0.4.0",
+  "minimum_chrome_version": "101",
   "description": "Pause autopilot browsing, choose your intention, and protect focused time.",
   "permissions": [
     "alarms",
+    "declarativeNetRequest",
     "notifications",
+    "scripting",
     "storage",
     "tabs",
     "webNavigation"
@@ -16,11 +19,10 @@
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [
+  "web_accessible_resources": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["pass-countdown.js"],
-      "run_at": "document_idle"
+      "resources": ["intervention.html"],
+      "matches": ["<all_urls>"]
     }
   ],
   "action": {

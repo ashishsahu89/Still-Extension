@@ -1,10 +1,12 @@
 const params = new URLSearchParams(location.search);
-const targetUrl = params.get("url");
-const siteHost = params.get("host");
+const rawTargetUrl = params.get("url");
+const siteHost = String(params.get("host") || "").toLowerCase();
 const siteLabel = params.get("label") || "this site";
-const focusActive = params.get("focus") === "true";
+const requestedFocus = params.get("focus") === "true";
 const focusEndAt = Number(params.get("focusEndAt")) || 0;
-const strictFocus = params.get("strict") !== "false";
+let focusActive = false;
+let strictFocus = params.get("strict") !== "false";
+let targetUrl = null;
 
 const countdown = document.querySelector("#countdown");
 const breathWord = document.querySelector("#breath-word");
@@ -21,6 +23,24 @@ const focusRemaining = document.querySelector("#focus-remaining");
 const focusRemainingVerb = document.querySelector("#focus-remaining-verb");
 const choice = document.querySelector(".choice");
 document.querySelector("#site-name").textContent = siteLabel;
+
+function matchesProtected(host, protectedHost) {
+  return Boolean(protectedHost) &&
+    (host === protectedHost || host.endsWith(`.${protectedHost}`));
+}
+
+function validatedTargetUrl(value, expectedHost) {
+  if (!value || !expectedHost) return null;
+  try {
+    const parsed = new URL(value);
+    if (!["http:", "https:"].includes(parsed.protocol)) return null;
+    return matchesProtected(parsed.hostname.toLowerCase(), expectedHost)
+      ? parsed.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 function dateKey() {
   return new Date().toLocaleDateString("en-CA");
@@ -91,6 +111,19 @@ function showFocusReminder(focus) {
 
 async function initialize() {
   const data = await chrome.storage.local.get(["pauseSeconds", "stats", "focus"]);
+  focusActive = data.focus?.endAt > Date.now();
+  strictFocus = focusActive
+    ? data.focus?.strict !== false
+    : params.get("strict") !== "false";
+  targetUrl = validatedTargetUrl(rawTargetUrl, siteHost);
+
+  if (requestedFocus && !focusActive && !targetUrl) {
+    await chrome.runtime.sendMessage({ type: "CLEAR_STALE_STRICT_RULES" });
+    if (history.length > 1) history.back();
+    else location.replace("https://www.google.com/");
+    return;
+  }
+
   const seconds = Math.max(3, Math.min(20, data.pauseSeconds || 8));
   const today = data.stats?.[dateKey()] || { focusedMinutes: 0 };
   document.querySelector("#today").textContent =
@@ -146,11 +179,15 @@ document.querySelector("#return-focus").addEventListener("click", async () => {
 
 continueButton.addEventListener("click", async () => {
   if (!targetUrl || !siteHost) return;
-  await chrome.runtime.sendMessage({
+  const response = await chrome.runtime.sendMessage({
     type: "ALLOW_SITE",
     host: siteHost,
     intention: intention.value.trim()
   });
+  if (!response?.ok) {
+    breathWord.textContent = "Still couldn’t start intentional time.";
+    return;
+  }
   location.replace(targetUrl);
 });
 

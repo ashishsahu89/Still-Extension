@@ -11,29 +11,36 @@
   }
 
   async function initialize() {
-    const previewSeconds = Number(
-      new URLSearchParams(location.search).get("stillPassPreviewSeconds")
+    if (document.querySelector("#still-pass-countdown")) return;
+    const data = await chrome.storage.local.get([
+      "passes",
+      "protectedSites",
+      "focus",
+      "activeRoutine"
+    ]);
+    const host = normalizeHost(location.hostname);
+    const passEntries =
+      data.passes && typeof data.passes === "object"
+        ? Object.entries(data.passes)
+        : [];
+    const activePass = passEntries.find(
+      ([passHost, passEndAt]) =>
+        matchesProtected(host, passHost) && Number(passEndAt) > Date.now()
     );
-    const isPreview =
-      location.hostname === "127.0.0.1" &&
-      Number.isFinite(previewSeconds) &&
-      previewSeconds > 0;
-
-    let site;
-    let endAt;
-    if (isPreview) {
-      site = { host: "127.0.0.1", label: "Preview" };
-      endAt = Date.now() + previewSeconds * 1000;
-    } else {
-      const data = await chrome.storage.local.get(["passes", "protectedSites"]);
-      const host = normalizeHost(location.hostname);
-      site = (data.protectedSites || []).find(
-        (item) => item.enabled && matchesProtected(host, item.host)
-      );
-      if (!site) return;
-      endAt = data.passes?.[site.host] || 0;
-      if (endAt <= Date.now()) return;
-    }
+    if (!activePass) return;
+    const [passHost, endAt] = activePass;
+    const availableSites = [
+      ...(Array.isArray(data.focus?.protectedSites)
+        ? data.focus.protectedSites
+        : []),
+      ...(Array.isArray(data.activeRoutine?.protectedSites)
+        ? data.activeRoutine.protectedSites
+        : []),
+      ...(Array.isArray(data.protectedSites) ? data.protectedSites : [])
+    ];
+    const site =
+      availableSites.find((item) => item?.host === passHost) ||
+      { host: passHost, label: passHost };
 
     const hostElement = document.createElement("div");
     hostElement.id = "still-pass-countdown";
@@ -169,16 +176,6 @@
       remaining.textContent = "0:00";
       timer.classList.add("expired");
       endButton.disabled = true;
-      if (isPreview) {
-        const target = new URL("intervention.html", location.href);
-        target.searchParams.set("url", "https://youtube.com/");
-        target.searchParams.set("host", "youtube.com");
-        target.searchParams.set("label", "YouTube");
-        target.searchParams.set("focus", "false");
-        target.searchParams.set("strict", "true");
-        location.replace(target);
-        return;
-      }
       try {
         await chrome.runtime.sendMessage({
           type: "PASS_EXPIRED",
