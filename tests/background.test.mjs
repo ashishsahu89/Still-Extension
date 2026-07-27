@@ -23,8 +23,9 @@ function clone(value) {
 }
 
 async function settle() {
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
+  for (let index = 0; index < 8; index += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 }
 
 function createHarness({ initialState = {}, tabs = [], initialNow = 1_800_000_000_000 } = {}) {
@@ -33,6 +34,8 @@ function createHarness({ initialState = {}, tabs = [], initialNow = 1_800_000_00
   const updates = [];
   const alarms = new Map();
   const notifications = new Map();
+  const dynamicRules = new Map();
+  const registeredScripts = new Map();
   const badge = { text: "", color: "" };
   const events = {
     installed: extensionEvent(),
@@ -80,6 +83,7 @@ function createHarness({ initialState = {}, tabs = [], initialNow = 1_800_000_00
       onChanged: events.storageChanged
     },
     runtime: {
+      id: "still",
       onInstalled: events.installed,
       onStartup: events.startup,
       onMessage: events.message,
@@ -127,6 +131,30 @@ function createHarness({ initialState = {}, tabs = [], initialNow = 1_800_000_00
         return clone(tab);
       }
     },
+    declarativeNetRequest: {
+      async getDynamicRules() {
+        return clone(Array.from(dynamicRules.values()));
+      },
+      async updateDynamicRules({ removeRuleIds = [], addRules = [] }) {
+        for (const id of removeRuleIds) dynamicRules.delete(id);
+        for (const rule of addRules) dynamicRules.set(rule.id, clone(rule));
+      }
+    },
+    scripting: {
+      async getRegisteredContentScripts() {
+        return clone(Array.from(registeredScripts.values()));
+      },
+      async unregisterContentScripts({ ids } = {}) {
+        if (!ids) {
+          registeredScripts.clear();
+          return;
+        }
+        for (const id of ids) registeredScripts.delete(id);
+      },
+      async registerContentScripts(scripts) {
+        for (const script of scripts) registeredScripts.set(script.id, clone(script));
+      }
+    },
     action: {
       async setBadgeBackgroundColor({ color }) {
         badge.color = color;
@@ -147,12 +175,28 @@ function createHarness({ initialState = {}, tabs = [], initialNow = 1_800_000_00
     String,
     Number,
     Math,
+    console: {
+      error() {}
+    },
     setTimeout() {
       return 0;
     }
   });
 
-  async function send(message, sender = {}) {
+  function defaultSender(message) {
+    if (["ALLOW_SITE", "CLEAR_STALE_STRICT_RULES"].includes(message?.type)) {
+      return {
+        id: chrome.runtime.id,
+        url: chrome.runtime.getURL("intervention.html")
+      };
+    }
+    return {
+      id: chrome.runtime.id,
+      url: chrome.runtime.getURL("popup.html")
+    };
+  }
+
+  async function send(message, sender = defaultSender(message)) {
     let response;
     events.message.listeners[0](message, sender, (value) => {
       response = value;
@@ -166,8 +210,10 @@ function createHarness({ initialState = {}, tabs = [], initialNow = 1_800_000_00
   return {
     alarms,
     badge,
+    dynamicRules,
     events,
     notifications,
+    registeredScripts,
     send,
     setNow(value) {
       now = value;
@@ -260,6 +306,13 @@ test("starting strict focus snapshots protection, clears passes, and redirects o
   );
   assert.ok(harness.updates.every((update) => update.url.includes("focus=true")));
   assert.ok(harness.updates.every((update) => update.url.includes("strict=true")));
+  const strictRule = harness.dynamicRules.get(10001);
+  assert.deepEqual(strictRule.condition.requestDomains, [
+    "youtube.com",
+    "instagram.com",
+    "reddit.com"
+  ]);
+  assert.equal(strictRule.action.type, "redirect");
 });
 
 test("strict exit is background-enforced and records partial progress", async () => {
@@ -304,6 +357,7 @@ test("strict exit is background-enforced and records partial progress", async ()
   assert.equal(harness.state.focusSessions[0].focusedSeconds, 21);
   assert.equal(harness.state.focusSessions[0].completed, false);
   assert.equal(harness.state.focusSessions[0].intention, "Deep work");
+  assert.equal(harness.dynamicRules.size, 0);
 });
 
 test("confirmed emergency exit remains immediately available", async () => {
@@ -334,7 +388,7 @@ test("confirmed emergency exit remains immediately available", async () => {
   assert.equal(harness.state.focusExits[0].reason, "Urgent call");
 });
 
-test("history-state navigation is blocked using the session snapshot", async () => {
+test("strict focus uses a preventive rule and still records history-state impulses", async () => {
   const now = 1_800_000_000_000;
   const harness = createHarness({
     initialNow: now,
@@ -360,9 +414,12 @@ test("history-state navigation is blocked using the session snapshot", async () 
     url: "https://www.youtube.com/shorts/abc"
   });
 
-  assert.equal(harness.updates.length, 1);
-  assert.equal(harness.updates[0].tabId, 7);
-  assert.ok(harness.updates[0].url.includes("focus=true"));
+  assert.equal(harness.updates.length, 0);
+  assert.deepEqual(
+    harness.dynamicRules.get(10001).condition.requestDomains,
+    ["youtube.com"]
+  );
+  assert.equal(Object.values(harness.state.stats)[0].impulsesPaused, 1);
 });
 
 test("startup completes an expired focus and restores active alarms", async () => {
@@ -443,6 +500,35 @@ test("an intercepted impulse is recorded in aggregate, by site, and by time", as
   );
 });
 
+test("concurrent navigation events cannot overwrite each other's impulse data", async () => {
+  const now = 1_800_000_000_000;
+  const harness = createHarness({
+    initialNow: now,
+    initialState: baseState()
+  });
+  await settle();
+
+  const listener = harness.events.beforeNavigate.listeners[0];
+  listener({
+    frameId: 0,
+    tabId: 21,
+    url: "https://youtube.com/watch?v=one"
+  });
+  listener({
+    frameId: 0,
+    tabId: 22,
+    url: "https://reddit.com/r/productivity"
+  });
+  await settle();
+
+  const day = Object.values(harness.state.stats)[0];
+  const siteDay = Object.values(harness.state.siteStats)[0];
+  assert.equal(day.impulsesPaused, 2);
+  assert.equal(siteDay["youtube.com"].impulses, 1);
+  assert.equal(siteDay["reddit.com"].impulses, 1);
+  assert.equal(harness.state.impulseEvents.length, 2);
+});
+
 test("temporary access records protected-site usage when the pass ends", async () => {
   const now = 1_800_000_000_000;
   const harness = createHarness({
@@ -459,18 +545,162 @@ test("temporary access records protected-site usage when the pass ends", async (
   });
   assert.equal(allowed.endAt, now + 5 * 60_000);
   assert.equal(harness.state.passStarts["youtube.com"], now);
+  assert.equal(harness.registeredScripts.size, 1);
+  assert.deepEqual(
+    Array.from(harness.registeredScripts.values())[0].matches,
+    ["*://youtube.com/*", "*://*.youtube.com/*"]
+  );
 
   harness.setNow(now + 2 * 60_000);
   const expired = await harness.send(
     { type: "PASS_EXPIRED", host: "youtube.com", force: true },
-    { tab: { id: 11, url: "https://youtube.com/watch?v=focus" } }
+    {
+      id: "still",
+      url: "https://youtube.com/watch?v=focus",
+      tab: { id: 11, url: "https://youtube.com/watch?v=focus" }
+    }
   );
 
   assert.equal(expired.ok, true);
   assert.deepEqual(harness.state.passes, {});
   assert.deepEqual(harness.state.passStarts, {});
+  assert.equal(harness.registeredScripts.size, 0);
   const siteDay = Object.values(harness.state.siteStats)[0];
   assert.equal(siteDay["youtube.com"].usageSeconds, 120);
+});
+
+test("temporary access works during a non-strict focus session", async () => {
+  const now = 1_800_000_000_000;
+  const harness = createHarness({
+    initialNow: now,
+    initialState: baseState({ strictFocus: false })
+  });
+  await settle();
+  await harness.send({
+    type: "START_FOCUS",
+    minutes: 25,
+    intention: "Watch the course"
+  });
+
+  await eventsCall(harness.events.beforeNavigate, {
+    frameId: 0,
+    tabId: 23,
+    url: "https://youtube.com/watch?v=course"
+  });
+  assert.equal(harness.updates.length, 1);
+
+  const allowed = await harness.send({
+    type: "ALLOW_SITE",
+    host: "youtube.com",
+    intention: "Course lesson"
+  });
+  assert.equal(allowed.ok, true);
+  assert.equal(harness.registeredScripts.size, 1);
+
+  await eventsCall(harness.events.beforeNavigate, {
+    frameId: 0,
+    tabId: 24,
+    url: "https://youtube.com/watch?v=course"
+  });
+  assert.equal(harness.updates.length, 1);
+});
+
+test("privileged messages reject untrusted senders", async () => {
+  const harness = createHarness({
+    initialState: baseState()
+  });
+  await settle();
+
+  const start = await harness.send(
+    { type: "START_FOCUS", minutes: 25, intention: "Do work" },
+    { id: "still", url: "https://example.com/" }
+  );
+  assert.equal(start.ok, false);
+  assert.equal(start.reason, "invalid-sender");
+  assert.equal(harness.state.focus, null);
+
+  const access = await harness.send(
+    { type: "ALLOW_SITE", host: "youtube.com" },
+    { id: "still", url: "chrome-extension://still/popup.html" }
+  );
+  assert.equal(access.ok, false);
+  assert.equal(access.reason, "invalid-sender");
+  assert.deepEqual(harness.state.passes, {});
+});
+
+test("duplicate focus-complete alarms record a session only once", async () => {
+  const now = 1_800_000_000_000;
+  const harness = createHarness({
+    initialNow: now,
+    initialState: baseState({
+      focus: {
+        startedAt: now - 25 * 60_000,
+        endAt: now,
+        minutes: 25,
+        intention: "Finish once",
+        strict: true,
+        protectedSites: clone(defaultSites)
+      }
+    })
+  });
+  await settle();
+
+  const alarmListener = harness.events.alarm.listeners[0];
+  alarmListener({ name: "focus-complete" });
+  alarmListener({ name: "focus-complete" });
+  await settle();
+
+  assert.equal(harness.state.focus, null);
+  assert.equal(harness.state.focusSessions.length, 1);
+  assert.equal(Object.values(harness.state.stats)[0].sessions, 1);
+  assert.equal(harness.dynamicRules.size, 0);
+});
+
+test("startup migrates storage and prunes history outside retention limits", async () => {
+  const now = 1_800_000_000_000;
+  const oldDailyAt = now - 600 * 24 * 60 * 60_000;
+  const recentDailyAt = now - 30 * 24 * 60 * 60_000;
+  const oldRawAt = now - 100 * 24 * 60 * 60_000;
+  const recentRawAt = now - 10 * 24 * 60 * 60_000;
+  const oldDay = new Date(oldDailyAt).toLocaleDateString("en-CA");
+  const recentDay = new Date(recentDailyAt).toLocaleDateString("en-CA");
+  const harness = createHarness({
+    initialNow: now,
+    initialState: baseState({
+      stats: {
+        [oldDay]: { impulsesPaused: 4 },
+        [recentDay]: { impulsesPaused: 2 }
+      },
+      siteStats: {
+        [oldDay]: { "youtube.com": { impulses: 4, usageSeconds: 20 } },
+        [recentDay]: { "youtube.com": { impulses: 2, usageSeconds: 10 } }
+      },
+      impulseEvents: [
+        { host: "youtube.com", createdAt: oldRawAt },
+        { host: "reddit.com", createdAt: recentRawAt }
+      ],
+      focusSessions: [
+        { startedAt: oldDailyAt, focusedSeconds: 1200 },
+        { startedAt: recentDailyAt, focusedSeconds: 1200 }
+      ],
+      focusExits: [
+        { createdAt: oldRawAt, reason: "Old" },
+        { createdAt: recentRawAt, reason: "Recent" }
+      ]
+    })
+  });
+  await settle();
+
+  assert.equal(harness.state.storageSchemaVersion, 1);
+  assert.deepEqual(Object.keys(harness.state.stats), [recentDay]);
+  assert.deepEqual(Object.keys(harness.state.siteStats), [recentDay]);
+  assert.deepEqual(harness.state.impulseEvents, [
+    { host: "reddit.com", createdAt: recentRawAt }
+  ]);
+  assert.equal(harness.state.focusSessions.length, 1);
+  assert.equal(harness.state.focusSessions[0].startedAt, recentDailyAt);
+  assert.equal(harness.state.focusExits.length, 1);
+  assert.equal(harness.state.focusExits[0].createdAt, recentRawAt);
 });
 
 test("an automatic strict routine starts only the remaining scheduled time", async () => {
