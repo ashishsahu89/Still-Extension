@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Protection · Still</title>
-    <link rel="stylesheet" href="ui.css?v=0.6.2" />
-    <link rel="stylesheet" href="options.css?v=0.6.2" />
+    <link rel="stylesheet" href="ui.css?v=0.7.0" />
+    <link rel="stylesheet" href="options.css?v=0.7.0" />
   </head>
   <body>
     <div class="options-app">
@@ -31,6 +31,7 @@
               <p class="nav-label">Settings</p>
               <button class="nav-item" type="button" data-view="protection">Protection</button>
               <button class="nav-item" type="button" data-view="routines">Routines</button>
+              <button class="nav-item" type="button" data-view="ai">AI</button>
               <button class="nav-item" type="button" data-view="data">Data &amp; privacy</button>
             </div>
           </nav>
@@ -336,27 +337,14 @@
             </section>
           </section>
 
-          <section class="view" id="data-view" data-view-panel="data" hidden>
+          <section class="view" id="ai-view" data-view-panel="ai" hidden>
             <div class="page-heading">
-              <h2>What Still remembers</h2>
-              <p>Review your sessions and recent intentions.</p>
+              <h2>Choose a model</h2>
+              <p>Use intelligence built into your browser or connect your own.</p>
             </div>
 
             <div class="content-column">
-              <section class="settings-section">
-                <div class="setting-row">
-                  <div class="row-copy">
-                    <strong>Active-tab measurement</strong>
-                    <p>Count time only for the domain visible in your active browser tab, while your browser is in use.</p>
-                  </div>
-                  <label class="switch">
-                    <input id="usage-tracking-enabled" type="checkbox" />
-                    <span class="switch-track"></span>
-                    <span class="sr-only">Measure active-tab time</span>
-                  </label>
-                </div>
-              </section>
-              <section class="settings-section ai-settings" id="chrome-ai-settings" aria-label="On-device intelligence" hidden>
+              <section class="settings-section ai-settings" id="chrome-ai-settings" aria-label="On-device intelligence">
                 <div id="ai-supported-settings" hidden>
                   <div class="setting-row">
                     <div class="row-copy">
@@ -382,13 +370,110 @@
                     </button>
                   </div>
                   <p class="privacy-note">
-                    Still shares only aggregated domains, time, visits, and time of day with the model.
+                    Only aggregated domains, time, visits, and time of day are shared with this model.
                     Page addresses, titles, and content are never included, and nothing leaves your device.
                   </p>
                 </div>
                 <div class="ai-unavailable-note" id="ai-unavailable-note" hidden>
-                  <strong>On-device intelligence isn’t available</strong>
-                  <p>Your browser or device doesn’t currently provide a compatible built-in model. Still’s category insights continue to work without it.</p>
+                  <strong id="ai-unavailable-title">On-device intelligence isn’t available</strong>
+                  <p id="ai-unavailable-copy">This browser or device doesn’t currently provide a compatible built-in model.</p>
+                </div>
+              </section>
+
+              <section class="settings-section">
+                <div class="section-heading-row ai-connections-heading">
+                  <div>
+                    <h3>Your models</h3>
+                    <p>Connect an API or a model running on this computer.</p>
+                  </div>
+                  <button class="secondary-button compact-button" id="add-ai-connection" type="button">Add model</button>
+                </div>
+                <div class="ai-connection-list" id="ai-connection-list"></div>
+                <div class="ai-connection-empty" id="ai-connection-empty">
+                  <p>No models connected yet.</p>
+                  <span>Still works without AI. Connect one when you want smarter organization or explanations.</span>
+                </div>
+              </section>
+
+              <form class="ai-connection-form settings-section" id="ai-connection-form" hidden>
+                <div class="routine-form-heading">
+                  <div>
+                    <h3 id="ai-form-title">Add a model</h3>
+                    <p id="ai-form-intro">Still connects directly from this browser.</p>
+                  </div>
+                  <button class="text-button" id="cancel-ai-connection-top" type="button">Cancel</button>
+                </div>
+                <input id="ai-connection-id" type="hidden" />
+
+                <label class="form-field">
+                  <span>Provider</span>
+                  <select id="ai-provider">
+                    <option value="openai">OpenAI</option>
+                    <option value="ollama">Ollama</option>
+                    <option value="lmstudio">LM Studio</option>
+                    <option value="compatible">OpenAI-compatible API</option>
+                  </select>
+                </label>
+
+                <div class="form-grid two-column">
+                  <label class="form-field">
+                    <span>Name</span>
+                    <input id="ai-label" maxlength="80" placeholder="My model" required />
+                  </label>
+                  <label class="form-field">
+                    <span>Model request name</span>
+                    <input id="ai-model" maxlength="160" required />
+                  </label>
+                </div>
+
+                <label class="form-field">
+                  <span>Server endpoint</span>
+                  <input id="ai-endpoint" type="url" maxlength="2048" inputmode="url" required />
+                </label>
+
+                <div class="form-field">
+                  <label class="form-field-label" for="ai-api-key">API key <small id="ai-key-optional">Optional</small></label>
+                  <span class="secret-field">
+                    <input id="ai-api-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false" />
+                    <button id="toggle-ai-key" type="button">Show</button>
+                  </span>
+                  <small class="field-help" id="ai-key-help">Kept in memory until you close the browser.</small>
+                </div>
+
+                <div class="connection-privacy" id="ai-connection-privacy"></div>
+                <p class="form-error ai-connection-error" id="ai-connection-error" role="alert"></p>
+                <p class="inline-status ai-test-status" id="ai-test-status" role="status"></p>
+                <div class="form-actions">
+                  <button class="primary-button" id="test-save-ai-connection" type="submit">Test and save</button>
+                  <button class="secondary-button" id="cancel-ai-connection" type="button">Cancel</button>
+                </div>
+              </form>
+
+              <section class="settings-section ai-data-note">
+                <h3>Direct by design</h3>
+                <p>Still never receives your key or model requests. Local models stay on this computer. When you choose a remote model, the information needed for that feature goes directly to its provider and follows that provider’s privacy policy.</p>
+              </section>
+            </div>
+          </section>
+
+          <section class="view" id="data-view" data-view-panel="data" hidden>
+            <div class="page-heading">
+              <h2>What Still remembers</h2>
+              <p>Review your sessions and recent intentions.</p>
+            </div>
+
+            <div class="content-column">
+              <section class="settings-section">
+                <div class="setting-row">
+                  <div class="row-copy">
+                    <strong>Active-tab measurement</strong>
+                    <p>Count time only for the domain visible in your active browser tab, while your browser is in use.</p>
+                  </div>
+                  <label class="switch">
+                    <input id="usage-tracking-enabled" type="checkbox" />
+                    <span class="switch-track"></span>
+                    <span class="sr-only">Measure active-tab time</span>
+                  </label>
                 </div>
               </section>
               <section class="settings-section">
@@ -401,7 +486,7 @@
               </section>
               <section class="settings-section privacy">
                 <h3>Private by design</h3>
-                <p>Still stores your settings, sessions, domain-level activity, and intentions only in your browser’s local extension storage. It has no account, analytics, ads, or external server.</p>
+                <p>Still stores your settings, sessions, domain-level activity, and intentions only in your browser’s local extension storage. It has no account, analytics, ads, or server of its own. If you connect a remote AI model, requests go directly to that provider only when an AI feature is used.</p>
               </section>
             </div>
           </section>
@@ -409,10 +494,11 @@
       </div>
     </div>
 
-    <script src="preview-runtime.js"></script>
-    <script src="routine-suggestions.js"></script>
-    <script src="site-categories.js"></script>
-    <script src="chrome-ai.js"></script>
-    <script src="options.js"></script>
+    <script src="preview-runtime.js?v=0.7.0"></script>
+    <script src="routine-suggestions.js?v=0.7.0"></script>
+    <script src="site-categories.js?v=0.7.0"></script>
+    <script src="ai-connections.js?v=0.7.0"></script>
+    <script src="chrome-ai.js?v=0.7.0"></script>
+    <script src="options.js?v=0.7.0"></script>
   </body>
 </html>

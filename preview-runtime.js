@@ -1,6 +1,15 @@
 /* Local-page preview only. Chrome ignores this shim because its extension API already exists. */
 const previewParams = new URLSearchParams(location.search);
 const previewAIState = previewParams.get("ai");
+if (location.protocol.startsWith("http") && previewParams.get("connection") === "success") {
+  globalThis.StillPreviewAIConnectionFetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return { choices: [{ message: { content: "ready" } }] };
+    }
+  });
+}
 if (
   location.protocol.startsWith("http") &&
   ["light", "dark"].includes(previewParams.get("theme"))
@@ -155,6 +164,8 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
     chromeAIEnabled: false,
     aiCategoryCache: {},
     aiInsightCache: {},
+    aiConnections: [],
+    activeAIConnectionId: "",
     focus: null,
     passes: {},
     passStarts: {},
@@ -220,6 +231,7 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
   }
 
   const storageListeners = [];
+  const previewSessionState = { aiConnectionSecrets: {} };
   const previewChrome = globalThis.chrome || {};
   Object.assign(previewChrome, {
     storage: {
@@ -236,6 +248,21 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
           }
           Object.assign(previewState, values);
           for (const listener of storageListeners) listener(changes, "local");
+        }
+      },
+      session: {
+        async get(keys) {
+          if (typeof keys === "string") return { [keys]: previewSessionState[keys] };
+          if (!keys) return { ...previewSessionState };
+          return Object.fromEntries(keys.map((key) => [key, previewSessionState[key]]));
+        },
+        async set(values) {
+          const changes = {};
+          for (const [key, value] of Object.entries(values)) {
+            changes[key] = { oldValue: previewSessionState[key], newValue: value };
+          }
+          Object.assign(previewSessionState, values);
+          for (const listener of storageListeners) listener(changes, "session");
         }
       },
       onChanged: {

@@ -17,6 +17,11 @@ const VIEW_COPY = {
     intro: "Let focus begin before distraction does.",
     documentTitle: "Routines · Still"
   },
+  ai: {
+    title: "AI",
+    intro: "Connect intelligence on your terms.",
+    documentTitle: "AI · Still"
+  },
   data: {
     title: "Data & privacy",
     intro: "Everything stays on this device.",
@@ -39,6 +44,10 @@ let chromeAICapability = { state: "checking", supported: false };
 let routineFormOpen = false;
 let currentRoutineSuggestion = null;
 let reviewingRoutineSuggestion = false;
+let aiConnections = [];
+let activeAIConnectionId = "";
+let aiConnectionSecrets = {};
+let aiConnectionFormOpen = false;
 const SUGGESTION_DISMISS_MS = 14 * 24 * 60 * 60 * 1000;
 
 function normalizeInput(value) {
@@ -264,6 +273,271 @@ function showSaved() {
 async function saveSetting(key, value) {
   await chrome.storage.local.set({ [key]: value });
   showSaved();
+}
+
+function aiProvider(providerId) {
+  return globalThis.StillAIConnections?.providerFor(providerId);
+}
+
+function currentAISecret(connectionId) {
+  return typeof aiConnectionSecrets[connectionId] === "string"
+    ? aiConnectionSecrets[connectionId]
+    : "";
+}
+
+function aiConnectionNeedsKey(connection) {
+  const provider = aiProvider(connection.provider);
+  return provider?.requiresApiKey === true && !currentAISecret(connection.id);
+}
+
+function aiProviderMark(providerId) {
+  if (providerId === "lmstudio") return "LM";
+  if (providerId === "compatible") return "API";
+  return aiProvider(providerId)?.label.slice(0, 1).toUpperCase() || "AI";
+}
+
+function renderAIConnections() {
+  const container = $("#ai-connection-list");
+  const empty = $("#ai-connection-empty");
+  container.replaceChildren();
+  empty.hidden = aiConnections.length > 0;
+
+  for (const connection of aiConnections) {
+    const provider = aiProvider(connection.provider);
+    if (!provider) continue;
+    const row = document.createElement("div");
+    row.className = "ai-connection-row";
+    if (connection.id === activeAIConnectionId) row.classList.add("active");
+
+    const mark = document.createElement("span");
+    mark.className = "ai-provider-mark";
+    mark.textContent = aiProviderMark(connection.provider);
+
+    const copy = document.createElement("div");
+    copy.className = "ai-connection-copy";
+    const title = document.createElement("strong");
+    title.textContent = connection.label;
+    const detail = document.createElement("span");
+    detail.textContent = `${provider.label} · ${connection.model}`;
+    const endpoint = document.createElement("small");
+    endpoint.textContent = connection.local ? "Runs on this device" : new URL(connection.endpoint).host;
+    copy.append(title, detail, endpoint);
+
+    const state = document.createElement("span");
+    state.className = "connection-state";
+    if (aiConnectionNeedsKey(connection)) {
+      state.classList.add("attention");
+      state.textContent = "Key needed";
+    } else if (connection.id === activeAIConnectionId) {
+      state.textContent = "Default";
+    } else {
+      state.textContent = "Ready";
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "ai-connection-actions";
+    if (connection.id !== activeAIConnectionId) {
+      const useButton = document.createElement("button");
+      useButton.type = "button";
+      useButton.dataset.aiAction = "use";
+      useButton.dataset.connectionId = connection.id;
+      useButton.textContent = aiConnectionNeedsKey(connection) ? "Reconnect" : "Make default";
+      actions.append(useButton);
+    }
+    const editButton = document.createElement("button");
+    editButton.type = "button";
+    editButton.dataset.aiAction = "edit";
+    editButton.dataset.connectionId = connection.id;
+    editButton.textContent = "Edit";
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.dataset.aiAction = "remove";
+    removeButton.dataset.connectionId = connection.id;
+    removeButton.textContent = "Remove";
+    actions.append(editButton, removeButton);
+
+    row.append(mark, copy, state, actions);
+    container.append(row);
+  }
+}
+
+function setAIConnectionPrivacy(provider) {
+  const container = $("#ai-connection-privacy");
+  container.replaceChildren();
+  const strong = document.createElement("strong");
+  const copy = document.createElement("span");
+  if (provider.local) {
+    strong.textContent = "Requests stay on this computer.";
+    copy.textContent = "The API key is optional unless you enabled authentication in your local model server.";
+  } else {
+    strong.textContent = `Requests go directly to ${provider.label}.`;
+    copy.textContent = "Still never receives them. The provider’s privacy and billing terms apply.";
+  }
+  container.append(strong, copy);
+}
+
+function updateAIProviderFields({ resetValues = false } = {}) {
+  const provider = aiProvider($("#ai-provider").value);
+  if (!provider) return;
+  if (resetValues) {
+    $("#ai-label").value = provider.label;
+    $("#ai-endpoint").value = provider.endpoint;
+    $("#ai-api-key").value = "";
+  }
+  $("#ai-model").placeholder = provider.modelPlaceholder;
+  $("#ai-endpoint").placeholder = provider.endpoint || "https://provider.example/v1/chat/completions";
+  $("#ai-key-optional").hidden = provider.requiresApiKey;
+  $("#ai-api-key").required = provider.requiresApiKey;
+  $("#ai-key-help").textContent = provider.requiresApiKey
+    ? "Kept in memory until you close the browser. Still never stores it on disk."
+    : "Optional. Keys are kept in memory until you close the browser.";
+  setAIConnectionPrivacy(provider);
+}
+
+function openAIConnectionForm(connection = null) {
+  aiConnectionFormOpen = true;
+  const form = $("#ai-connection-form");
+  form.hidden = false;
+  $("#ai-connection-id").value = connection?.id || "";
+  $("#ai-provider").value = connection?.provider || "openai";
+  updateAIProviderFields({ resetValues: !connection });
+  if (connection) {
+    $("#ai-label").value = connection.label;
+    $("#ai-model").value = connection.model;
+    $("#ai-endpoint").value = connection.endpoint;
+    $("#ai-form-title").textContent = `Edit ${connection.label}`;
+    $("#ai-form-intro").textContent = "Test the model again before saving changes.";
+    $("#ai-api-key").placeholder = currentAISecret(connection.id)
+      ? "Key available for this browser session"
+      : "Enter your API key";
+  } else {
+    $("#ai-model").value = "";
+    $("#ai-form-title").textContent = "Add a model";
+    $("#ai-form-intro").textContent = "Still connects directly from this browser.";
+    $("#ai-api-key").placeholder = "Paste your API key";
+  }
+  $("#ai-api-key").type = "password";
+  $("#toggle-ai-key").textContent = "Show";
+  $("#ai-connection-error").textContent = "";
+  $("#ai-test-status").textContent = "";
+  $("#ai-label").focus();
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function closeAIConnectionForm() {
+  aiConnectionFormOpen = false;
+  $("#ai-connection-form").hidden = true;
+  $("#ai-connection-form").reset();
+  $("#ai-connection-error").textContent = "";
+  $("#ai-test-status").textContent = "";
+}
+
+function createAIConnectionId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  return `model-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+async function storeAIConnectionSecrets() {
+  if (!chrome.storage.session) return;
+  await chrome.storage.session.set({ aiConnectionSecrets });
+}
+
+async function saveTestedAIConnection(event) {
+  event.preventDefault();
+  if (!globalThis.StillAIConnections) return;
+  const button = $("#test-save-ai-connection");
+  const error = $("#ai-connection-error");
+  const status = $("#ai-test-status");
+  const id = $("#ai-connection-id").value || createAIConnectionId();
+  const existing = aiConnections.find((connection) => connection.id === id);
+  const enteredKey = $("#ai-api-key").value.trim();
+  const apiKey = enteredKey || currentAISecret(id);
+  const draft = {
+    id,
+    provider: $("#ai-provider").value,
+    label: $("#ai-label").value,
+    model: $("#ai-model").value,
+    endpoint: $("#ai-endpoint").value,
+    createdAt: existing?.createdAt || Date.now()
+  };
+
+  error.textContent = "";
+  status.textContent = "Testing this model with a short request…";
+  button.disabled = true;
+  button.textContent = "Testing…";
+  const result = await StillAIConnections.testConnection(draft, { apiKey });
+  button.disabled = false;
+  button.textContent = "Test and save";
+
+  if (!result.ok) {
+    status.textContent = "";
+    error.textContent = result.error;
+    const fieldByName = {
+      provider: "#ai-provider",
+      label: "#ai-label",
+      model: "#ai-model",
+      endpoint: "#ai-endpoint",
+      apiKey: "#ai-api-key"
+    };
+    if (fieldByName[result.field]) $(fieldByName[result.field]).focus();
+    return;
+  }
+
+  const savedConnection = {
+    ...result.connection,
+    id,
+    createdAt: existing?.createdAt || Date.now(),
+    updatedAt: Date.now(),
+    lastTestedAt: Date.now(),
+    lastLatencyMs: result.latencyMs
+  };
+  aiConnections = existing
+    ? aiConnections.map((connection) => connection.id === id ? savedConnection : connection)
+    : [...aiConnections, savedConnection];
+  if (apiKey) aiConnectionSecrets[id] = apiKey;
+  else delete aiConnectionSecrets[id];
+  if (!activeAIConnectionId) activeAIConnectionId = id;
+  await storeAIConnectionSecrets();
+  await chrome.storage.local.set({ aiConnections, activeAIConnectionId });
+  renderAIConnections();
+  closeAIConnectionForm();
+  showSaved();
+}
+
+async function handleAIConnectionAction(event) {
+  const button = event.target.closest("[data-ai-action]");
+  if (!button) return;
+  const connection = aiConnections.find((item) => item.id === button.dataset.connectionId);
+  if (!connection) return;
+  if (button.dataset.aiAction === "edit") {
+    openAIConnectionForm(connection);
+    return;
+  }
+  if (button.dataset.aiAction === "use") {
+    if (aiConnectionNeedsKey(connection)) {
+      openAIConnectionForm(connection);
+      $("#ai-connection-error").textContent = "Enter your API key to reconnect this model.";
+      $("#ai-api-key").focus();
+      return;
+    }
+    activeAIConnectionId = connection.id;
+    await chrome.storage.local.set({ activeAIConnectionId });
+    renderAIConnections();
+    showSaved();
+    return;
+  }
+  if (button.dataset.aiAction === "remove") {
+    aiConnections = aiConnections.filter((item) => item.id !== connection.id);
+    delete aiConnectionSecrets[connection.id];
+    if (activeAIConnectionId === connection.id) {
+      activeAIConnectionId = aiConnections[0]?.id || "";
+    }
+    await storeAIConnectionSecrets();
+    await chrome.storage.local.set({ aiConnections, activeAIConnectionId });
+    if ($("#ai-connection-id").value === connection.id) closeAIConnectionForm();
+    renderAIConnections();
+    showSaved();
+  }
 }
 
 function setView(view, { updateHash = true } = {}) {
@@ -995,10 +1269,26 @@ function renderChromeAICapability(result) {
   const showSupportedSettings =
     !unsupported && !unavailable && result?.state !== "checking";
 
-  settings.hidden = unsupported || result?.state === "checking";
+  settings.hidden = false;
   supportedSettings.hidden = !showSupportedSettings;
-  unavailableNote.hidden = !unavailable;
+  unavailableNote.hidden = showSupportedSettings;
   insightControls.hidden = !canUseChromeAI(result);
+
+  if (!showSupportedSettings) {
+    if (result?.state === "checking") {
+      $("#ai-unavailable-title").textContent = "Checking this browser…";
+      $("#ai-unavailable-copy").textContent =
+        "Still is looking for a compatible on-device model.";
+    } else if (unsupported) {
+      $("#ai-unavailable-title").textContent = "No built-in model in this browser";
+      $("#ai-unavailable-copy").textContent =
+        "You can still connect OpenAI, Ollama, LM Studio, or another compatible model below.";
+    } else {
+      $("#ai-unavailable-title").textContent = "On-device model unavailable";
+      $("#ai-unavailable-copy").textContent =
+        "This device doesn’t currently meet the browser model requirements. Your own models still work.";
+    }
+  }
 
   if (!canUseChromeAI(result)) {
     $("#ai-pattern").hidden = true;
@@ -1362,8 +1652,29 @@ async function render() {
     "dismissedRoutineSuggestions",
     "chromeAIEnabled",
     "aiCategoryCache",
-    "aiInsightCache"
+    "aiInsightCache",
+    "aiConnections",
+    "activeAIConnectionId"
   ]);
+  const sessionData = chrome.storage.session
+    ? await chrome.storage.session.get("aiConnectionSecrets")
+    : {};
+  aiConnectionSecrets =
+    sessionData.aiConnectionSecrets &&
+    typeof sessionData.aiConnectionSecrets === "object" &&
+    !Array.isArray(sessionData.aiConnectionSecrets)
+      ? sessionData.aiConnectionSecrets
+      : {};
+  aiConnections = Array.isArray(insightsData.aiConnections) && globalThis.StillAIConnections
+    ? insightsData.aiConnections
+        .map((connection) => StillAIConnections.normalizeConnection(connection))
+        .filter((connection) => connection.id && connection.label && connection.endpoint)
+    : [];
+  activeAIConnectionId = aiConnections.some(
+    (connection) => connection.id === insightsData.activeAIConnectionId
+  )
+    ? insightsData.activeAIConnectionId
+    : aiConnections[0]?.id || "";
   $("#mindful-mode").checked = insightsData.mindfulMode !== false;
   $("#strict-focus").checked = insightsData.strictFocus !== false;
   $("#pause-seconds").value = String(insightsData.pauseSeconds || 8);
@@ -1373,6 +1684,7 @@ async function render() {
   renderSites(insightsData.protectedSites || []);
   renderRoutineSuggestion();
   renderRoutines();
+  renderAIConnections();
   renderHistory();
   setView(location.hash.slice(1) || "protection", { updateHash: false });
   void refreshChromeAIStatus();
@@ -1403,6 +1715,20 @@ $("#chrome-ai-enabled").addEventListener("change", async (event) => {
 });
 $("#prepare-chrome-ai").addEventListener("click", prepareChromeAI);
 $("#explain-pattern").addEventListener("click", explainCurrentPattern);
+$("#add-ai-connection").addEventListener("click", () => openAIConnectionForm());
+$("#ai-connection-list").addEventListener("click", handleAIConnectionAction);
+$("#ai-connection-form").addEventListener("submit", saveTestedAIConnection);
+$("#cancel-ai-connection").addEventListener("click", closeAIConnectionForm);
+$("#cancel-ai-connection-top").addEventListener("click", closeAIConnectionForm);
+$("#ai-provider").addEventListener("change", () =>
+  updateAIProviderFields({ resetValues: true })
+);
+$("#toggle-ai-key").addEventListener("click", () => {
+  const field = $("#ai-api-key");
+  const reveal = field.type === "password";
+  field.type = reveal ? "text" : "password";
+  $("#toggle-ai-key").textContent = reveal ? "Hide" : "Show";
+});
 
 $("#new-routine").addEventListener("click", () => openRoutineForm());
 $("#cancel-routine").addEventListener("click", closeRoutineForm);

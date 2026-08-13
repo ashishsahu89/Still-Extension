@@ -21,6 +21,8 @@ const DEFAULTS = {
   chromeAIEnabled: false,
   aiCategoryCache: {},
   aiInsightCache: {},
+  aiConnections: [],
+  activeAIConnectionId: "",
   impulseEvents: [],
   focusSessions: [],
   intentions: [],
