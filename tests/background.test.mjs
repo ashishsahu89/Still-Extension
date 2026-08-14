@@ -7,6 +7,10 @@ const backgroundCode = await readFile(
   new URL("../background.js", import.meta.url),
   "utf8"
 );
+const tabOrganizerCode = await readFile(
+  new URL("../tab-organizer.js", import.meta.url),
+  "utf8"
+);
 
 function extensionEvent() {
   const listeners = [];
@@ -40,6 +44,7 @@ function createHarness({
   let idleState = initialIdleState;
   const tabState = clone(tabs);
   const state = clone(initialState);
+  const sessionState = {};
   const updates = [];
   const alarms = new Map();
   const notifications = new Map();
@@ -53,14 +58,19 @@ function createHarness({
     message: extensionEvent(),
     beforeNavigate: extensionEvent(),
     historyStateUpdated: extensionEvent(),
+    createdNavigationTarget: extensionEvent(),
     storageChanged: extensionEvent(),
     notificationButtonClicked: extensionEvent(),
     tabActivated: extensionEvent(),
     tabUpdated: extensionEvent(),
     tabRemoved: extensionEvent(),
+    tabGroupUpdated: extensionEvent(),
+    tabGroupRemoved: extensionEvent(),
     windowFocusChanged: extensionEvent(),
     idleStateChanged: extensionEvent()
   };
+  const tabGroups = new Map();
+  let nextGroupId = 1;
 
   class FakeDate extends Date {
     constructor(...args) {
@@ -94,6 +104,16 @@ function createHarness({
           }
         }
       },
+      session: {
+        async get(keys) {
+          if (typeof keys === "string") return { [keys]: clone(sessionState[keys]) };
+          if (!keys) return clone(sessionState);
+          return Object.fromEntries(keys.map((key) => [key, clone(sessionState[key])]));
+        },
+        async set(values) {
+          Object.assign(sessionState, clone(values));
+        }
+      },
       onChanged: events.storageChanged
     },
     runtime: {
@@ -107,7 +127,8 @@ function createHarness({
     },
     webNavigation: {
       onBeforeNavigate: events.beforeNavigate,
-      onHistoryStateUpdated: events.historyStateUpdated
+      onHistoryStateUpdated: events.historyStateUpdated,
+      onCreatedNavigationTarget: events.createdNavigationTarget
     },
     alarms: {
       onAlarm: events.alarm,
@@ -143,6 +164,7 @@ function createHarness({
           tabState.filter(
             (tab) =>
               (queryInfo.active === undefined || tab.active === queryInfo.active) &&
+              (queryInfo.lastFocusedWindow === undefined || (tab.windowId ?? 1) === focusedWindowId) &&
               (queryInfo.windowId === undefined ||
                 (tab.windowId ?? 1) === queryInfo.windowId)
           )
@@ -156,6 +178,30 @@ function createHarness({
         const tab = tabState.find((item) => item.id === tabId);
         if (tab && details.url) tab.url = details.url;
         return clone(tab);
+      },
+      async group({ tabIds, groupId }) {
+        const ids = (Array.isArray(tabIds) ? tabIds : [tabIds]).filter(Number.isInteger);
+        const id = Number.isInteger(groupId) ? groupId : nextGroupId++;
+        if (!tabGroups.has(id)) tabGroups.set(id, { id, title: "", color: "grey", collapsed: false });
+        for (const tab of tabState) {
+          if (ids.includes(tab.id)) tab.groupId = id;
+        }
+        return id;
+      },
+      async ungroup(tabIds) {
+        for (const tab of tabState) {
+          if (tabIds.includes(tab.id)) tab.groupId = -1;
+        }
+      }
+    },
+    tabGroups: {
+      onUpdated: events.tabGroupUpdated,
+      onRemoved: events.tabGroupRemoved,
+      async update(groupId, changes) {
+        const group = { ...(tabGroups.get(groupId) || { id: groupId }), ...clone(changes) };
+        tabGroups.set(groupId, group);
+        for (const listener of events.tabGroupUpdated.listeners) listener(clone(group));
+        return clone(group);
       }
     },
     windows: {
@@ -208,7 +254,7 @@ function createHarness({
     }
   };
 
-  vm.runInNewContext(backgroundCode, {
+  vm.runInNewContext(`${tabOrganizerCode}\n${backgroundCode}`, {
     chrome,
     Date: FakeDate,
     URL,
@@ -221,13 +267,15 @@ function createHarness({
     console: {
       error() {}
     },
+    globalThis: {},
+    importScripts() {},
     setTimeout() {
       return 0;
     }
   });
 
   function defaultSender(message) {
-    if (["ALLOW_SITE", "CLEAR_STALE_STRICT_RULES"].includes(message?.type)) {
+    if (["ALLOW_SITE", "START_TASK_ACCESS", "CLEAR_STALE_STRICT_RULES"].includes(message?.type)) {
       return {
         id: chrome.runtime.id,
         url: chrome.runtime.getURL("intervention.html")
@@ -254,6 +302,7 @@ function createHarness({
     alarms,
     badge,
     dynamicRules,
+    tabGroups,
     events,
     notifications,
     registeredScripts,
@@ -285,6 +334,7 @@ function createHarness({
       if (tab) tab.url = url;
     },
     state,
+    tabs: tabState,
     updates
   };
 }
@@ -304,6 +354,9 @@ function baseState(overrides = {}) {
     focus: null,
     passes: {},
     passStarts: {},
+    passDetails: {},
+    mindfulWindows: {},
+    focusBreak: null,
     stats: {},
     siteStats: {},
     usageStats: {},
@@ -639,6 +692,117 @@ test("temporary access records protected-site usage when the pass ends", async (
   assert.equal(siteDay["youtube.com"].usageSeconds, 120);
 });
 
+test("mindful access expires across every open site tab and starts a non-bypassable cooldown", async () => {
+  const now = 1_800_000_000_000;
+  const harness = createHarness({
+    initialNow: now,
+    initialState: baseState(),
+    tabs: [
+      { id: 11, url: "https://youtube.com/watch?v=one" },
+      { id: 12, url: "https://www.youtube.com/watch?v=two" }
+    ]
+  });
+  await settle();
+
+  await harness.send({ type: "ALLOW_SITE", host: "youtube.com" });
+  harness.setNow(now + 5 * 60_000);
+  await eventsCall(harness.events.alarm, { name: "pass:youtube.com" });
+
+  assert.deepEqual(harness.state.passes, {});
+  assert.equal(harness.state.mindfulWindows["youtube.com"].cooldownUntil, now + 30 * 60_000);
+  assert.equal(harness.state.mindfulWindows["youtube.com"].taskEligible, true);
+  assert.equal(
+    harness.updates.filter((update) => update.url.includes("state=pass-expired")).length,
+    2
+  );
+  const retry = await harness.send({ type: "ALLOW_SITE", host: "youtube.com" });
+  assert.equal(retry.ok, false);
+  assert.equal(retry.reason, "mindful-cooldown");
+
+  await eventsCall(harness.events.beforeNavigate, {
+    frameId: 0,
+    tabId: 11,
+    url: "https://youtube.com/watch?v=again"
+  });
+  assert.ok(harness.updates.at(-1).url.includes("state=cooldown"));
+});
+
+test("a task session is a single intentional exception, not a repeatable pass", async () => {
+  const now = 1_800_000_000_000;
+  const harness = createHarness({
+    initialNow: now,
+    initialState: baseState(),
+    tabs: [{ id: 11, url: "https://youtube.com/watch?v=one" }]
+  });
+  await settle();
+
+  await harness.send({ type: "ALLOW_SITE", host: "youtube.com" });
+  harness.setNow(now + 5 * 60_000);
+  await eventsCall(harness.events.alarm, { name: "pass:youtube.com" });
+
+  const task = await harness.send({
+    type: "START_TASK_ACCESS",
+    host: "youtube.com",
+    minutes: 15,
+    intention: "Watch the onboarding tutorial"
+  });
+  assert.equal(task.ok, true);
+  assert.equal(task.endAt, now + 20 * 60_000);
+  assert.equal(harness.state.passDetails["youtube.com"].kind, "task");
+  assert.equal(harness.state.mindfulWindows["youtube.com"].taskUsed, true);
+  harness.setTabUrl(11, "https://youtube.com/watch?v=task");
+
+  const retry = await harness.send({
+    type: "START_TASK_ACCESS",
+    host: "youtube.com",
+    minutes: 15,
+    intention: "One more thing"
+  });
+  assert.equal(retry.ok, false);
+  assert.equal(retry.reason, "task-not-available");
+
+  harness.setNow(now + 20 * 60_000);
+  await eventsCall(harness.events.alarm, { name: "pass:youtube.com" });
+  assert.ok(harness.updates.at(-1).url.includes("state=task-expired"));
+});
+
+test("a saved mindful allowance survives restart and retains its one task exception", async () => {
+  const now = 1_800_000_000_000;
+  const harness = createHarness({
+    initialNow: now,
+    initialState: baseState({
+      mindfulWindows: {
+        "youtube.com": {
+          startedAt: now - 5 * 60_000,
+          cooldownUntil: now + 25 * 60_000,
+          taskEligible: true,
+          taskUsed: false,
+          lastExpiredAt: now - 1
+        }
+      }
+    })
+  });
+  await settle();
+
+  await eventsCall(harness.events.beforeNavigate, {
+    frameId: 0,
+    tabId: 11,
+    url: "https://youtube.com/watch?v=return"
+  });
+  const redirect = harness.updates.at(-1).url;
+  assert.ok(redirect.includes("state=cooldown"));
+  assert.ok(redirect.includes("taskEligible=true"));
+
+  const task = await harness.send({
+    type: "START_TASK_ACCESS",
+    host: "youtube.com",
+    minutes: 30,
+    intention: "Review the recorded talk"
+  });
+  assert.equal(task.ok, true);
+  assert.equal(harness.state.mindfulWindows["youtube.com"].taskUsed, true);
+});
+
 test("temporary access works during a non-strict focus session", async () => {
   const now = 1_800_000_000_000;
   const harness = createHarness({
@@ -673,6 +837,38 @@ test("temporary access works during a non-strict focus session", async () => {
     url: "https://youtube.com/watch?v=course"
   });
   assert.equal(harness.updates.length, 1);
+});
+
+test("regular focus allows one shared break across all protected sites", async () => {
+  const now = 1_800_000_000_000;
+  const harness = createHarness({
+    initialNow: now,
+    initialState: baseState({ strictFocus: false }),
+    tabs: [{ id: 23, url: "https://youtube.com/watch?v=course" }]
+  });
+  await settle();
+  await harness.send({ type: "START_FOCUS", minutes: 25, intention: "Finish the course" });
+
+  const firstBreak = await harness.send({ type: "ALLOW_SITE", host: "youtube.com" });
+  assert.equal(firstBreak.ok, true);
+  assert.equal(harness.state.passDetails["youtube.com"].kind, "focus-break");
+  assert.equal(harness.state.focusBreak.host, "youtube.com");
+  harness.setTabUrl(23, "https://youtube.com/watch?v=course");
+
+  const anotherSite = await harness.send({ type: "ALLOW_SITE", host: "reddit.com" });
+  assert.equal(anotherSite.ok, false);
+  assert.equal(anotherSite.reason, "focus-break-used");
+
+  harness.setNow(now + 5 * 60_000);
+  await eventsCall(harness.events.alarm, { name: "pass:youtube.com" });
+  assert.ok(harness.updates.at(-1).url.includes("state=focus-break-ended"));
+
+  await eventsCall(harness.events.beforeNavigate, {
+    frameId: 0,
+    tabId: 23,
+    url: "https://reddit.com/r/focus"
+  });
+  assert.ok(harness.updates.at(-1).url.includes("state=focus-break-used"));
 });
 
 test("privileged messages reject untrusted senders", async () => {
@@ -779,7 +975,7 @@ test("startup migrates storage and prunes history outside retention limits", asy
   });
   await settle();
 
-  assert.equal(harness.state.storageSchemaVersion, 2);
+  assert.equal(harness.state.storageSchemaVersion, 3);
   assert.deepEqual(Object.keys(harness.state.stats), [recentDay]);
   assert.deepEqual(Object.keys(harness.state.siteStats), [recentDay]);
   assert.deepEqual(Object.keys(harness.state.usageStats), [recentDay]);
@@ -1197,6 +1393,153 @@ test("emergency exit from an automatic routine skips only its current occurrence
   assert.equal(harness.state.focus, null);
   assert.equal(harness.state.routineSkips[`deep-work:${startAt}`], true);
   assert.equal(harness.state.routines[0].enabled, true);
+});
+
+test("one-click organisation groups related tabs, supports undo, and keeps a link trail together", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://news.ycombinator.com/", title: "Hacker News" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "chrome://newtab/", pendingUrl: "https://arxiv.org/abs/123", title: "A paper" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://reddit.com/r/webdev", title: "Web development" },
+      { id: 4, windowId: 1, index: 3, groupId: -1, url: "https://www.reddit.com/r/javascript", title: "JavaScript" }
+    ]
+  });
+  await settle();
+
+  const organised = await harness.send({ type: "ORGANIZE_TABS" });
+  assert.equal(organised.ok, true);
+  assert.equal(organised.groups.length, 1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, harness.tabs.find((tab) => tab.id === 4).groupId);
+  assert.equal(harness.tabGroups.get(1).title, "Social");
+
+  const undone = await harness.send({ type: "UNDO_TAB_ORGANIZATION" });
+  assert.equal(undone.ok, true);
+  assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, -1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 4).groupId, -1);
+
+  await eventsCall(harness.events.createdNavigationTarget, {
+    sourceTabId: 1,
+    tabId: 2
+  });
+  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, harness.tabs.find((tab) => tab.id === 2).groupId);
+  assert.equal(harness.tabGroups.get(2).title, "Related tabs");
+
+  harness.removeTab(2);
+  await eventsCall(harness.events.tabRemoved, 2, { windowId: 1 });
+  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, -1);
+});
+
+test("organisation uses on-device categories for unfamiliar related tabs", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://brilliant.org/", title: "Brilliant" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://udacity.com/", title: "Udacity" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://example.com/", title: "Example" }
+    ]
+  });
+  await settle();
+
+  const organised = await harness.send({
+    type: "ORGANIZE_TABS",
+    categoryOverrides: {
+      "brilliant.org": "Reference & learning",
+      "udacity.com": "Reference & learning",
+      "example.com": "Other"
+    }
+  });
+
+  assert.equal(organised.ok, true);
+  assert.equal(organised.groups.length, 1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, harness.tabs.find((tab) => tab.id === 2).groupId);
+  assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, -1);
+  assert.equal(harness.tabGroups.get(1).title, "Learning");
+});
+
+test("organisation respects a useful AI category plan and preserves its group name", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://amazon.in/", title: "Amazon" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://flipkart.com/", title: "Flipkart" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://godaddy.com/", title: "Domain names" }
+    ]
+  });
+  await settle();
+
+  const organised = await harness.send({
+    type: "ORGANIZE_TABS",
+    tabPlans: [{ title: "Shopping", tabIds: [1, 2, 999] }]
+  });
+
+  assert.equal(organised.ok, true);
+  assert.equal(organised.groups.length, 1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, harness.tabs.find((tab) => tab.id === 2).groupId);
+  assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, -1);
+  assert.equal(harness.tabGroups.get(1).title, "Shopping");
+});
+
+test("organisation rejects AI plans that mix known roles or smuggle in unknown tabs", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://news.ycombinator.com/", title: "Hacker News" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://coursera.org/", title: "Coursera" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://udemy.com/", title: "Udemy" },
+      { id: 4, windowId: 1, index: 3, groupId: -1, url: "https://github.com/", title: "GitHub" },
+      { id: 5, windowId: 1, index: 4, groupId: -1, url: "https://sports.yahoo.com/", title: "Yahoo Sports" },
+      { id: 6, windowId: 1, index: 5, groupId: -1, url: "https://stackoverflow.com/", title: "Stack Overflow" },
+      { id: 7, windowId: 1, index: 6, groupId: -1, url: "https://law.example.com/", title: "Legal article" },
+      { id: 8, windowId: 1, index: 7, groupId: -1, url: "https://walmart.com/", title: "Walmart" },
+      { id: 9, windowId: 1, index: 8, groupId: -1, url: "https://amazon.in/", title: "Amazon" }
+    ]
+  });
+  await settle();
+
+  const organised = await harness.send({
+    type: "ORGANIZE_TABS",
+    tabPlans: [
+      { title: "Online Courses", tabIds: [1, 2, 3, 4] },
+      { title: "Social Media", tabIds: [5, 6] },
+      { title: "Online Shopping", tabIds: [7, 8] },
+      { title: "Online Courses", tabIds: [2, 3] },
+      { title: "Online Shopping", tabIds: [8, 9] }
+    ]
+  });
+
+  assert.equal(organised.ok, true);
+  assert.equal(organised.groups.length, 2);
+  assert.equal(harness.tabs.find((tab) => tab.id === 2).groupId, harness.tabs.find((tab) => tab.id === 3).groupId);
+  assert.equal(harness.tabs.find((tab) => tab.id === 8).groupId, harness.tabs.find((tab) => tab.id === 9).groupId);
+  for (const tabId of [1, 4, 5, 6, 7]) {
+    assert.equal(harness.tabs.find((tab) => tab.id === tabId).groupId, -1);
+  }
+});
+
+test("organisation leaves tabs alone when every explicit AI plan is rejected", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://coursera.org/", title: "Coursera" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://udemy.com/", title: "Udemy" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://github.com/", title: "GitHub" },
+      { id: 4, windowId: 1, index: 3, groupId: -1, url: "https://news.ycombinator.com/", title: "Hacker News" }
+    ]
+  });
+  await settle();
+
+  const organised = await harness.send({
+    type: "ORGANIZE_TABS",
+    tabPlans: [{ title: "Online Courses", tabIds: [1, 2, 3, 4] }]
+  });
+
+  assert.equal(organised.ok, true);
+  assert.equal(organised.usedLocalFallback, false);
+  assert.equal(organised.groups.length, 0);
+  for (const tabId of [1, 2, 3, 4]) {
+    assert.equal(harness.tabs.find((tab) => tab.id === tabId).groupId, -1);
+  }
 });
 
 async function eventsCall(event, ...args) {
