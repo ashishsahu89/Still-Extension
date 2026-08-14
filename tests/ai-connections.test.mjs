@@ -131,3 +131,33 @@ test("returns a concise provider error for failed connection tests", async () =>
   assert.equal(result.ok, false);
   assert.equal(result.error, "Model not found");
 });
+
+test("returns a bounded model completion only after a validated request", async () => {
+  const adapter = loadConnections();
+  const result = await adapter.complete(
+    {
+      provider: "compatible",
+      label: "Private endpoint",
+      model: "model-a",
+      endpoint: "https://models.example.com/v1/chat/completions"
+    },
+    {
+      apiKey: "private-token",
+      prompt: "Name this tab group",
+      async fetchImpl(_url, options) {
+        assert.equal(options.headers.Authorization, "Bearer private-token");
+        assert.match(options.body, /Name this tab group/);
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { choices: [{ message: { content: '{"groups":[]}' } }] };
+          }
+        };
+      }
+    }
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.content, '{"groups":[]}');
+  assert.equal(result.connection.label, "Private endpoint");
+});

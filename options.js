@@ -1356,17 +1356,22 @@ async function prepareChromeAI() {
 
   const progress = $("#ai-download-progress");
   const bar = $("#ai-download-bar");
-  progress.hidden = false;
+  const availability = await StillChromeAI.getAvailability();
+  const needsDownload = availability.state !== "available";
+  progress.hidden = !needsDownload;
   bar.style.width = "0%";
   setChromeAIStatus({
-    title: "Preparing on-device intelligence…",
-    copy: "This can take a few minutes the first time.",
-    action: "Preparing…",
+    title: needsDownload ? "Preparing on-device intelligence…" : "Refreshing categories…",
+    copy: needsDownload
+      ? "This can take a few minutes the first time."
+      : "Using the model already available on this device.",
+    action: needsDownload ? "Preparing…" : "Refreshing…",
     disabled: true
   });
 
   const domains = unknownDomainAggregates();
   const onDownloadProgress = ({ percent }) => {
+    if (!needsDownload) return;
     progress.hidden = false;
     bar.style.width = `${percent}%`;
     $("#ai-availability-copy").textContent = `Downloading on-device model · ${percent}%`;

@@ -206,12 +206,57 @@
     }
   }
 
+  async function complete(input, options = {}) {
+    const validated = validateConnection(input, options.apiKey);
+    if (!validated.ok) return validated;
+    const prompt = cleanText(options.prompt, 12000);
+    if (!prompt) return { ok: false, error: "There is no request to send to this model." };
+    const fetchImpl = options.fetchImpl || global.StillPreviewAIConnectionFetch || global.fetch;
+    if (typeof fetchImpl !== "function") return { ok: false, error: "This browser cannot contact this model." };
+    const timeoutMs = Math.max(1000, Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS);
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    const request = requestFor(validated.connection, validated.apiKey, prompt);
+    try {
+      const response = await fetchImpl(request.url, {
+        ...request.options,
+        ...(controller ? { signal: controller.signal } : {})
+      });
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch (_error) {
+        // The HTTP status below is still useful when JSON is absent.
+      }
+      if (!response.ok) return { ok: false, error: responseError(payload, response.status) };
+      const content = cleanText(payload?.choices?.[0]?.message?.content, 16000);
+      if (!content) {
+        return { ok: false, error: "The model responded without a usable completion." };
+      }
+      return { ok: true, content, connection: validated.connection };
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        return { ok: false, error: "The model took too long to respond." };
+      }
+      return {
+        ok: false,
+        error:
+          error?.name === "TypeError"
+            ? "Still couldn’t reach this model. Check the endpoint and model server."
+            : cleanText(error?.message, 220) || "Still could not contact this model."
+      };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   global.StillAIConnections = Object.freeze({
     PROVIDERS,
     providerFor,
     normalizeConnection,
     validateConnection,
     requestFor,
+    complete,
     testConnection,
     isLoopbackHostname
   });
