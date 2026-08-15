@@ -25,6 +25,11 @@ main {
   text-align: center;
 }
 
+#pause-view[hidden],
+.expiry-view[hidden] {
+  display: none;
+}
+
 .breath-stage {
   position: relative;
   display: grid;
@@ -286,6 +291,168 @@ h1.focus-heading {
   stroke-linejoin: round;
 }
 
+.expiry-view {
+  width: min(560px, 100%);
+  margin: 46px auto 0;
+}
+
+.expiry-stage {
+  position: relative;
+  display: grid;
+  width: 154px;
+  height: 154px;
+  margin: 0 auto 26px;
+  place-items: center;
+}
+
+.expiry-ring {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--breath-ring);
+  border-radius: 50%;
+}
+
+.expiry-orb {
+  position: relative;
+  display: grid;
+  width: 106px;
+  height: 106px;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 38% 32%,
+    var(--breath-orb-start),
+    var(--breath-orb-mid) 72%,
+    var(--breath-orb-end)
+  );
+  box-shadow: 0 12px 28px var(--breath-shadow);
+}
+
+.expiry-orb .seed {
+  height: 29px;
+  margin-top: 14px;
+}
+
+.expiry-orb .seed::before,
+.expiry-orb .seed::after {
+  width: 20px;
+  height: 11px;
+}
+
+.expiry-view h1 {
+  margin: 0;
+}
+
+.expiry-copy {
+  max-width: 510px;
+  margin: 17px auto 0;
+  color: var(--text-soft);
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.expiry-focus {
+  max-width: 510px;
+  margin: 13px auto 0;
+  color: var(--moss-dark);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.expiry-focus[hidden],
+.task-form[hidden] {
+  display: none;
+}
+
+.expiry-actions {
+  margin-top: 27px;
+}
+
+.expiry-actions .primary-button,
+.task-form .primary-button {
+  height: 55px;
+  font-size: 17px;
+}
+
+.expiry-actions .continue-button {
+  margin-top: 14px;
+}
+
+.expiry-note {
+  min-height: 20px;
+  margin: 15px auto 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.task-form {
+  margin: 21px 0 0;
+  padding: 21px;
+  border: 1px solid var(--breath-ring);
+  border-radius: 12px;
+  background: var(--reminder-surface);
+  text-align: left;
+}
+
+.task-form > label,
+.task-form legend {
+  display: block;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.task-form .field {
+  width: 100%;
+  height: 49px;
+  margin-top: 9px;
+  padding: 0 13px;
+  font-size: 15px;
+}
+
+.task-form fieldset {
+  padding: 0;
+  margin: 19px 0 0;
+  border: 0;
+}
+
+.task-durations {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.task-durations button {
+  height: 37px;
+  border: 1px solid var(--control-border-soft);
+  border-radius: 8px;
+  background: var(--field-bg);
+  color: var(--text-soft);
+  cursor: pointer;
+  font: 650 12px/1 var(--sans);
+}
+
+.task-durations button[aria-pressed="true"] {
+  border-color: var(--moss);
+  background: var(--sage-soft);
+  color: var(--moss-dark);
+}
+
+.task-form .primary-button {
+  margin-top: 19px;
+}
+
+.task-status {
+  min-height: 18px;
+  margin: 10px 0 0;
+  color: var(--danger-text);
+  font-size: 12px;
+  text-align: center;
+}
+
 footer {
   padding: 20px 20px 25px;
   color: var(--muted);
@@ -338,6 +505,35 @@ footer {
     margin-bottom: 12px;
     padding-block: 10px;
   }
+  .expiry-view {
+    margin-top: 14px;
+  }
+  .expiry-stage {
+    width: 120px;
+    height: 120px;
+    margin-bottom: 16px;
+  }
+  .expiry-orb {
+    width: 84px;
+    height: 84px;
+  }
+}
+
+@media (max-width: 540px) {
+  main {
+    padding-top: 14px;
+  }
+  .expiry-view {
+    margin-top: 20px;
+  }
+  .expiry-stage {
+    width: 130px;
+    height: 130px;
+    margin-bottom: 20px;
+  }
+  .task-form {
+    padding: 17px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -348,7 +544,8 @@ footer {
   .breath-ring,
   .choice .field,
   .choice .continue-button,
-  .choice .lock-status {
+  .choice .lock-status,
+  .expiry-orb {
     transition: none;
   }
 }

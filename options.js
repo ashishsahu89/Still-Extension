@@ -286,8 +286,11 @@ function currentAISecret(connectionId) {
 }
 
 function aiConnectionNeedsKey(connection) {
-  const provider = aiProvider(connection.provider);
-  return provider?.requiresApiKey === true && !currentAISecret(connection.id);
+  const validation = globalThis.StillAIConnections?.validateConnection(
+    connection,
+    currentAISecret(connection.id)
+  );
+  return validation?.ok === false && validation.field === "apiKey";
 }
 
 function aiProviderMark(providerId) {
@@ -336,7 +339,14 @@ function renderAIConnections() {
 
     const actions = document.createElement("div");
     actions.className = "ai-connection-actions";
-    if (connection.id !== activeAIConnectionId) {
+    if (connection.id === activeAIConnectionId) {
+      const disableButton = document.createElement("button");
+      disableButton.type = "button";
+      disableButton.dataset.aiAction = "disable";
+      disableButton.dataset.connectionId = connection.id;
+      disableButton.textContent = "Disable";
+      actions.append(disableButton);
+    } else {
       const useButton = document.createElement("button");
       useButton.type = "button";
       useButton.dataset.aiAction = "use";
@@ -389,8 +399,8 @@ function updateAIProviderFields({ resetValues = false } = {}) {
   $("#ai-key-optional").hidden = provider.requiresApiKey;
   $("#ai-api-key").required = provider.requiresApiKey;
   $("#ai-key-help").textContent = provider.requiresApiKey
-    ? "Kept in memory until you close the browser. Still never stores it on disk."
-    : "Optional. Keys are kept in memory until you close the browser.";
+    ? "Saved in Still’s local extension storage on this device."
+    : "Optional for local models. If entered, it is saved in Still’s local extension storage on this device.";
   setAIConnectionPrivacy(provider);
 }
 
@@ -408,7 +418,7 @@ function openAIConnectionForm(connection = null) {
     $("#ai-form-title").textContent = `Edit ${connection.label}`;
     $("#ai-form-intro").textContent = "Test the model again before saving changes.";
     $("#ai-api-key").placeholder = currentAISecret(connection.id)
-      ? "Key available for this browser session"
+      ? "Key saved locally on this device"
       : "Enter your API key";
   } else {
     $("#ai-model").value = "";
@@ -438,8 +448,8 @@ function createAIConnectionId() {
 }
 
 async function storeAIConnectionSecrets() {
-  if (!chrome.storage.session) return;
-  await chrome.storage.session.set({ aiConnectionSecrets });
+  await chrome.storage.local.set({ aiConnectionSecrets });
+  if (chrome.storage.session) await chrome.storage.session.remove("aiConnectionSecrets");
 }
 
 async function saveTestedAIConnection(event) {
@@ -450,6 +460,7 @@ async function saveTestedAIConnection(event) {
   const status = $("#ai-test-status");
   const id = $("#ai-connection-id").value || createAIConnectionId();
   const existing = aiConnections.find((connection) => connection.id === id);
+  const shouldActivate = !existing && aiConnections.length === 0;
   const enteredKey = $("#ai-api-key").value.trim();
   const apiKey = enteredKey || currentAISecret(id);
   const draft = {
@@ -496,7 +507,7 @@ async function saveTestedAIConnection(event) {
     : [...aiConnections, savedConnection];
   if (apiKey) aiConnectionSecrets[id] = apiKey;
   else delete aiConnectionSecrets[id];
-  if (!activeAIConnectionId) activeAIConnectionId = id;
+  if (shouldActivate) activeAIConnectionId = id;
   await storeAIConnectionSecrets();
   await chrome.storage.local.set({ aiConnections, activeAIConnectionId });
   renderAIConnections();
@@ -526,11 +537,18 @@ async function handleAIConnectionAction(event) {
     showSaved();
     return;
   }
+  if (button.dataset.aiAction === "disable") {
+    activeAIConnectionId = "";
+    await chrome.storage.local.set({ activeAIConnectionId });
+    renderAIConnections();
+    showSaved();
+    return;
+  }
   if (button.dataset.aiAction === "remove") {
     aiConnections = aiConnections.filter((item) => item.id !== connection.id);
     delete aiConnectionSecrets[connection.id];
     if (activeAIConnectionId === connection.id) {
-      activeAIConnectionId = aiConnections[0]?.id || "";
+      activeAIConnectionId = "";
     }
     await storeAIConnectionSecrets();
     await chrome.storage.local.set({ aiConnections, activeAIConnectionId });
@@ -1659,27 +1677,32 @@ async function render() {
     "aiCategoryCache",
     "aiInsightCache",
     "aiConnections",
-    "activeAIConnectionId"
+    "activeAIConnectionId",
+    "aiConnectionSecrets"
   ]);
   const sessionData = chrome.storage.session
     ? await chrome.storage.session.get("aiConnectionSecrets")
     : {};
+  const persistedSecrets = insightsData.aiConnectionSecrets;
+  const legacySessionSecrets = sessionData.aiConnectionSecrets;
   aiConnectionSecrets =
-    sessionData.aiConnectionSecrets &&
-    typeof sessionData.aiConnectionSecrets === "object" &&
-    !Array.isArray(sessionData.aiConnectionSecrets)
-      ? sessionData.aiConnectionSecrets
-      : {};
+    persistedSecrets && typeof persistedSecrets === "object" && !Array.isArray(persistedSecrets)
+      ? persistedSecrets
+      : legacySessionSecrets && typeof legacySessionSecrets === "object" && !Array.isArray(legacySessionSecrets)
+        ? legacySessionSecrets
+        : {};
+  if (!persistedSecrets && Object.keys(aiConnectionSecrets).length) await storeAIConnectionSecrets();
   aiConnections = Array.isArray(insightsData.aiConnections) && globalThis.StillAIConnections
     ? insightsData.aiConnections
         .map((connection) => StillAIConnections.normalizeConnection(connection))
         .filter((connection) => connection.id && connection.label && connection.endpoint)
     : [];
-  activeAIConnectionId = aiConnections.some(
-    (connection) => connection.id === insightsData.activeAIConnectionId
-  )
-    ? insightsData.activeAIConnectionId
-    : aiConnections[0]?.id || "";
+  activeAIConnectionId = StillAIConnections.resolveActiveConnectionId(
+    aiConnections,
+    Object.hasOwn(insightsData, "activeAIConnectionId")
+      ? insightsData.activeAIConnectionId
+      : undefined
+  );
   $("#mindful-mode").checked = insightsData.mindfulMode !== false;
   $("#strict-focus").checked = insightsData.strictFocus !== false;
   $("#pause-seconds").value = String(insightsData.pauseSeconds || 8);

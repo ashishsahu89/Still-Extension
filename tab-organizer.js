@@ -139,28 +139,10 @@
     return CATCH_ALL_GROUP_TITLE.test(title) ? "" : title;
   }
 
-  function hasTrustedExplicitGroupEvidence(tabsInGroup, title) {
-    const hosts = new Set(tabsInGroup.map((tab) => tab.host));
-    if (hosts.size === 1) return true;
-
-    const categories = [...new Set(tabsInGroup
-      .map((tab) => categoryForHost(tab.host))
-      .filter(Boolean))];
-
-    // Different known roles are strong evidence that the model mixed unrelated
-    // tabs. Unknown tabs may not piggy-back onto an otherwise known category.
-    if (categories.length !== 1) return false;
-    if (tabsInGroup.some((tab) => !categoryForHost(tab.host))) return false;
-
-    // A model still has to stay within one independently-known site role. It
-    // may describe a concrete decision (for example, “Headphone comparison”)
-    // or use that shared role as a useful category (“Shopping”).
-    return Boolean(title) && !CATCH_ALL_GROUP_TITLE.test(title);
-  }
-
   // Accept a model's proposed clusters only after resolving every tab id against
-  // the current, ungrouped window. This keeps stale or malformed AI output from
-  // moving unrelated tabs.
+  // the current, ungrouped window. A connected model is the semantic authority:
+  // local hostname categories are only a fallback when no model result exists.
+  // We still reject malformed IDs, duplicate ownership, and catch-all titles.
   function plansForExplicitGroups(tabs, groups) {
     const candidates = normalizedTabs(tabs).filter((tab) => tab.groupId === TAB_GROUP_NONE);
     const byId = new Map(candidates.map((tab) => [tab.id, tab]));
@@ -176,7 +158,7 @@
       const tabsInGroup = groupTabIds
         .map((tabId) => byId.get(tabId))
         .sort((left, right) => left.index - right.index);
-      if (!hasTrustedExplicitGroupEvidence(tabsInGroup, title)) return [];
+      if (!title || CATCH_ALL_GROUP_TITLE.test(title)) return [];
       for (const tabId of groupTabIds) usedTabIds.add(tabId);
       return [{
         title,

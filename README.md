@@ -26,8 +26,10 @@ No build step, account, server, or Chrome Web Store upload is required.
 3. Outside sessions, Mindful Pauses can continue interrupting habitual visits.
 4. After one breath, return to focus or intentionally continue for five minutes.
 5. During intentional access, a compact on-page timer shows the remaining time and offers **End now**.
-6. When the pass expires, Still automatically returns every open tab for that protected site to the intervention screen—even if the page timer was throttled in a background tab.
+6. Outside focus, the five minutes become a per-site 30-minute allowance. When they end, Still returns every open tab for that protected site to a dedicated expiry screen—even if the page timer was throttled in a background tab. A single declared 15-, 30-, or 60-minute task exception is available from that screen; it cannot be extended or repeated.
 7. Strict focus snapshots the protected-site list for the session. Ending early requires a reason and a 20-second cooldown, while an explicit emergency exit always remains available.
+
+In regular (non-strict) focus, Still allows one shared five-minute break across all protected sites. When that break ends, the rest of the session remains protected. Strict focus allows no temporary access.
 
 When focus begins, Still also redirects protected sites that were already open and watches single-page-app history changes such as YouTube navigation.
 
@@ -45,7 +47,7 @@ Routines notify you five minutes before they begin with **Start now** and **Skip
 
 Still’s category insights measure only the domain in the active tab of the browser’s focused window. Measurement pauses when the browser loses focus, the user is idle, or the setting is turned off. Still never records page paths, titles, or content. Daily domain totals are retained for up to 550 days; bounded domain-only occurrences are retained for up to 90 days so time-of-day patterns can be calculated.
 
-Categories work without AI through a bundled taxonomy and conservative hostname rules. The AI page checks for a compatible browser-provided Prompt API and also lets users connect OpenAI, Ollama, LM Studio, or another OpenAI-compatible Chat Completions endpoint. Connection metadata is stored locally. API keys are kept only in `chrome.storage.session`, which means they are held in memory for the current browser session and must be re-entered after a browser restart. Local endpoints stay on the device; requests to a remote model go directly from the extension to that provider and follow its privacy and billing terms. Still has no relay server and never receives the key or request.
+Categories work without AI through a bundled taxonomy and conservative hostname rules. The AI page checks for a compatible browser-provided Prompt API and also lets users connect OpenAI, Ollama, LM Studio, or another OpenAI-compatible Chat Completions endpoint. A saved external connection can be disabled and enabled again without removing its settings or key. Connection metadata and API keys are stored only in Still’s local extension storage on that device, restricted to trusted Still contexts. Chrome extension storage is not encrypted by Still; users who need a key to disappear on browser restart can remove the model connection. Local endpoints stay on the device; requests to a remote model go directly from the extension to that provider and follow its privacy and billing terms. Still has no relay server and never receives the key or request.
 
 After enough local activity, Still can suggest a routine for a repeated distraction window. Suggestions use a transparent 28-day calculation based on impulse frequency, consistency across active days, recency, existing routines, and successful focus sessions in the same window. The suggestion appears in Routines and alongside **When distraction shows up** in Insights. Still never creates the routine automatically: **Review routine** opens a pre-filled form, while **Not now** pauses suggestions for two weeks.
 

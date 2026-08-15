@@ -83,6 +83,11 @@ async function ensureDefaults() {
   if (Object.keys(missing).length) await chrome.storage.local.set(missing);
 }
 
+async function restrictLocalStorageToStill() {
+  if (typeof chrome.storage?.local?.setAccessLevel !== "function") return;
+  await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
+}
+
 function pruneDatedRecord(record = {}, cutoff) {
   const source =
     record && typeof record === "object" && !Array.isArray(record) ? record : {};
@@ -1469,6 +1474,15 @@ async function safeTabGroupUpdate(groupId, changes) {
   }
 }
 
+async function safeTabGroupMove(groupId, index = 0) {
+  if (!chrome.tabGroups?.move) return null;
+  try {
+    return await chrome.tabGroups.move(Number(groupId), { index });
+  } catch {
+    return null;
+  }
+}
+
 async function tabsInGroup(groupId) {
   const tabs = await chrome.tabs.query({});
   return tabs.filter((tab) => tab.groupId === groupId);
@@ -1499,7 +1513,7 @@ async function applyAutoGroupName(groupId) {
     ? metadata.semanticName
     : localTitle;
   const color = globalThis.StillTabOrganizer.colorForName(title);
-  await safeTabGroupUpdate(groupId, { title, color, collapsed: false });
+  await safeTabGroupUpdate(groupId, { title, color });
   state.managedGroups[groupId] = {
     ...metadata,
     autoName: title,
@@ -1538,14 +1552,30 @@ async function organizeTabsInWindow(windowId, categoryOverrides = {}, tabPlans =
   const explicitPlans = Array.isArray(tabPlans)
     ? globalThis.StillTabOrganizer.plansForExplicitGroups(tabs, tabPlans)
     : null;
-  // A valid AI response is authoritative, including an intentional empty plan.
-  // Local categories are a resilient fallback only when no usable AI response
-  // reached this layer (for example, the model request or parsing failed).
   const hasExplicitPlan = Array.isArray(tabPlans);
-  const usedLocalFallback = false;
-  const plans = hasExplicitPlan
-    ? explicitPlans
-    : globalThis.StillTabOrganizer.plansForTabs(tabs, categoryOverrides);
+  const localPlans = globalThis.StillTabOrganizer.plansForTabs(tabs, categoryOverrides);
+  let usedLocalFallback = false;
+  let plans = localPlans;
+  if (hasExplicitPlan) {
+    // Keep every valid semantic group from the model, then fill only its unused
+    // tabs from Still's deterministic taxonomy. This makes obvious groups such
+    // as X + Reddit + Facebook reliable without vetoing cross-domain AI plans.
+    const usedTabIds = new Set(explicitPlans.flatMap((plan) => plan.tabs.map((tab) => tab.id)));
+    const supplementalPlans = localPlans.flatMap((plan) => {
+      const remainingTabs = plan.tabs.filter((tab) => !usedTabIds.has(tab.id));
+      if (remainingTabs.length < 2) return [];
+      const title = globalThis.StillTabOrganizer.nameForTabs(remainingTabs, categoryOverrides);
+      remainingTabs.forEach((tab) => usedTabIds.add(tab.id));
+      return [{
+        title,
+        color: globalThis.StillTabOrganizer.colorForName(title),
+        tabs: remainingTabs
+      }];
+    });
+    usedLocalFallback = supplementalPlans.length > 0;
+    plans = [...explicitPlans, ...supplementalPlans]
+      .sort((left, right) => left.tabs[0].index - right.tabs[0].index);
+  }
   if (!plans.length) {
     return { ok: true, groups: [], message: "Nothing to organise yet.", usedLocalFallback };
   }
@@ -1554,7 +1584,7 @@ async function organizeTabsInWindow(windowId, categoryOverrides = {}, tabPlans =
   const created = [];
   for (const plan of plans) {
     const groupId = await chrome.tabs.group({ tabIds: plan.tabs.map((tab) => tab.id) });
-    await safeTabGroupUpdate(groupId, { title: plan.title, color: plan.color, collapsed: false });
+    await safeTabGroupUpdate(groupId, { title: plan.title, color: plan.color, collapsed: true });
     state.managedGroups[groupId] = {
       windowId,
       autoName: plan.title,
@@ -1565,6 +1595,11 @@ async function organizeTabsInWindow(windowId, categoryOverrides = {}, tabPlans =
       updatedAt: Date.now()
     };
     created.push({ groupId, tabIds: plan.tabs.map((tab) => tab.id) });
+  }
+  // Moving from rightmost to leftmost preserves the plans' original visual
+  // order while placing the complete set of newly created groups at the left.
+  for (const { groupId } of [...created].reverse()) {
+    await safeTabGroupMove(groupId, 0);
   }
   state.undoByWindow[windowId] = { groups: created, createdAt: Date.now() };
   await saveTabOrganizerState(state);
@@ -1615,7 +1650,8 @@ async function addChildTabToSourceGroup(details) {
     const title = globalThis.StillTabOrganizer.nameForTabs([source, navigatedTarget]);
     const color = globalThis.StillTabOrganizer.colorForName(title);
     groupId = await chrome.tabs.group({ tabIds: [source.id, navigatedTarget.id] });
-    await safeTabGroupUpdate(groupId, { title, color, collapsed: false });
+    await safeTabGroupUpdate(groupId, { title, color, collapsed: true });
+    await safeTabGroupMove(groupId, 0);
     state.managedGroups[groupId] = {
       windowId: source.windowId,
       autoName: title,
@@ -1666,6 +1702,7 @@ let reconcilePromise;
 function reconcileState() {
   if (reconcilePromise) return reconcilePromise;
   reconcilePromise = (async () => {
+    await restrictLocalStorageToStill();
     await migrateStorage();
     await ensureDefaults();
     await reconcileUsageTracker();
@@ -1869,6 +1906,51 @@ function senderMatchesHost(sender, host) {
   } catch {
     return false;
   }
+}
+
+async function passCountdownContext(sender) {
+  if (sender?.id !== chrome.runtime.id || !sender.tab?.url) {
+    return { ok: false, reason: "invalid-sender" };
+  }
+  let currentHost = "";
+  try {
+    currentHost = normalizeHost(new URL(sender.tab.url).hostname);
+  } catch {
+    return { ok: false, reason: "invalid-sender" };
+  }
+  const data = await chrome.storage.local.get([
+    "passes",
+    "passDetails",
+    "protectedSites",
+    "focus",
+    "activeRoutine"
+  ]);
+  const activePass = Object.entries(data.passes || {}).find(
+    ([passHost, passEndAt]) =>
+      validStoredHost(passHost) && matchesProtected(currentHost, passHost) && Number(passEndAt) > Date.now()
+  );
+  if (!activePass) return { ok: false, reason: "no-active-pass" };
+  const [passHost, endAt] = activePass;
+  const detail = data.passDetails?.[passHost] || {};
+  const availableSites = [
+    ...(Array.isArray(data.focus?.protectedSites) ? data.focus.protectedSites : []),
+    ...(Array.isArray(data.activeRoutine?.protectedSites) ? data.activeRoutine.protectedSites : []),
+    ...(Array.isArray(data.protectedSites) ? data.protectedSites : [])
+  ];
+  const sourceSite = availableSites.find((item) => item?.host === passHost) || {};
+  return {
+    ok: true,
+    passHost,
+    endAt: Number(endAt),
+    passDetail: {
+      kind: safeText(detail.kind, 24),
+      intention: safeText(detail.intention, 68)
+    },
+    site: {
+      host: passHost,
+      label: safeText(sourceSite.label, 80) || passHost
+    }
+  };
 }
 
 async function tabOrganizerWindowId(sender) {
@@ -2198,6 +2280,10 @@ async function handleMessage(message, sender) {
     }
     const expired = await expirePass(host, sender.tab);
     return { ok: expired };
+  }
+
+  if (message.type === "GET_PASS_COUNTDOWN") {
+    return passCountdownContext(sender);
   }
 
   if (message.type === "CLEAR_STALE_STRICT_RULES") {

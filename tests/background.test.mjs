@@ -46,11 +46,13 @@ function createHarness({
   const state = clone(initialState);
   const sessionState = {};
   const updates = [];
+  const tabGroupMoves = [];
   const alarms = new Map();
   const notifications = new Map();
   const dynamicRules = new Map();
   const registeredScripts = new Map();
   const badge = { text: "", color: "" };
+  let localStorageAccessLevel = "";
   const events = {
     installed: extensionEvent(),
     startup: extensionEvent(),
@@ -102,6 +104,9 @@ function createHarness({
           for (const listener of events.storageChanged.listeners) {
             listener(changes, "local");
           }
+        },
+        async setAccessLevel({ accessLevel }) {
+          localStorageAccessLevel = accessLevel;
         }
       },
       session: {
@@ -197,6 +202,10 @@ function createHarness({
     tabGroups: {
       onUpdated: events.tabGroupUpdated,
       onRemoved: events.tabGroupRemoved,
+      async move(groupId, moveProperties) {
+        tabGroupMoves.push({ groupId, ...clone(moveProperties) });
+        return clone(tabGroups.get(groupId));
+      },
       async update(groupId, changes) {
         const group = { ...(tabGroups.get(groupId) || { id: groupId }), ...clone(changes) };
         tabGroups.set(groupId, group);
@@ -303,8 +312,12 @@ function createHarness({
     badge,
     dynamicRules,
     tabGroups,
+    tabGroupMoves,
     events,
     notifications,
+    get localStorageAccessLevel() {
+      return localStorageAccessLevel;
+    },
     registeredScripts,
     send,
     activateTab(tabId) {
@@ -690,6 +703,46 @@ test("temporary access records protected-site usage when the pass ends", async (
   assert.equal(harness.registeredScripts.size, 0);
   const siteDay = Object.values(harness.state.siteStats)[0];
   assert.equal(siteDay["youtube.com"].usageSeconds, 120);
+});
+
+test("keeps local storage trusted and gives pass countdowns only their matching context", async () => {
+  const now = 1_800_000_000_000;
+  const harness = createHarness({
+    initialNow: now,
+    initialState: baseState({
+      passes: { "youtube.com": now + 5 * 60_000 },
+      passDetails: { "youtube.com": { kind: "task", intention: "Watch a tutorial" } }
+    }),
+    tabs: [{ id: 11, windowId: 1, url: "https://www.youtube.com/watch?v=focus" }]
+  });
+  await settle();
+
+  assert.equal(harness.localStorageAccessLevel, "TRUSTED_CONTEXTS");
+  const context = await harness.send(
+    { type: "GET_PASS_COUNTDOWN" },
+    {
+      id: "still",
+      url: "https://www.youtube.com/watch?v=focus",
+      tab: { id: 11, url: "https://www.youtube.com/watch?v=focus" }
+    }
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(context)), {
+    ok: true,
+    passHost: "youtube.com",
+    endAt: now + 5 * 60_000,
+    passDetail: { kind: "task", intention: "Watch a tutorial" },
+    site: { host: "youtube.com", label: "YouTube" }
+  });
+
+  const unrelated = await harness.send(
+    { type: "GET_PASS_COUNTDOWN" },
+    {
+      id: "still",
+      url: "https://example.com/",
+      tab: { id: 12, url: "https://example.com/" }
+    }
+  );
+  assert.equal(unrelated.ok, false);
 });
 
 test("mindful access expires across every open site tab and starts a non-bypassable cooldown", async () => {
@@ -1412,6 +1465,8 @@ test("one-click organisation groups related tabs, supports undo, and keeps a lin
   assert.equal(organised.groups.length, 1);
   assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, harness.tabs.find((tab) => tab.id === 4).groupId);
   assert.equal(harness.tabGroups.get(1).title, "Social");
+  assert.equal(harness.tabGroups.get(1).collapsed, true);
+  assert.deepEqual(harness.tabGroupMoves[0], { groupId: 1, index: 0 });
 
   const undone = await harness.send({ type: "UNDO_TAB_ORGANIZATION" });
   assert.equal(undone.ok, true);
@@ -1424,6 +1479,8 @@ test("one-click organisation groups related tabs, supports undo, and keeps a lin
   });
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, harness.tabs.find((tab) => tab.id === 2).groupId);
   assert.equal(harness.tabGroups.get(2).title, "Related tabs");
+  assert.equal(harness.tabGroups.get(2).collapsed, true);
+  assert.deepEqual(harness.tabGroupMoves[1], { groupId: 2, index: 0 });
 
   harness.removeTab(2);
   await eventsCall(harness.events.tabRemoved, 2, { windowId: 1 });
@@ -1480,19 +1537,45 @@ test("organisation respects a useful AI category plan and preserves its group na
   assert.equal(harness.tabGroups.get(1).title, "Shopping");
 });
 
-test("organisation rejects AI plans that mix known roles or smuggle in unknown tabs", async () => {
+test("organisation supplements an empty AI plan with an obvious cross-domain Social group", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://x.com/home", title: "Home / X" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://reddit.com/", title: "Reddit" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://facebook.com/", title: "Facebook" },
+      { id: 4, windowId: 1, index: 3, groupId: -1, url: "https://example.com/", title: "Unrelated" }
+    ]
+  });
+  await settle();
+
+  const organised = await harness.send({
+    type: "ORGANIZE_TABS",
+    tabPlans: []
+  });
+
+  assert.equal(organised.ok, true);
+  assert.equal(organised.usedLocalFallback, true);
+  assert.equal(organised.groups.length, 1);
+  assert.equal(harness.tabGroups.get(1).title, "Social");
+  assert.equal(harness.tabGroups.get(1).collapsed, true);
+  assert.deepEqual(
+    harness.tabs.filter((tab) => tab.groupId === 1).map((tab) => tab.id),
+    [1, 2, 3]
+  );
+  assert.equal(harness.tabs.find((tab) => tab.id === 4).groupId, -1);
+});
+
+test("organisation keeps structurally valid cross-domain AI groups without a local taxonomy veto", async () => {
   const harness = createHarness({
     initialState: baseState(),
     tabs: [
       { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://news.ycombinator.com/", title: "Hacker News" },
-      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://coursera.org/", title: "Coursera" },
-      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://udemy.com/", title: "Udemy" },
-      { id: 4, windowId: 1, index: 3, groupId: -1, url: "https://github.com/", title: "GitHub" },
-      { id: 5, windowId: 1, index: 4, groupId: -1, url: "https://sports.yahoo.com/", title: "Yahoo Sports" },
-      { id: 6, windowId: 1, index: 5, groupId: -1, url: "https://stackoverflow.com/", title: "Stack Overflow" },
-      { id: 7, windowId: 1, index: 6, groupId: -1, url: "https://law.example.com/", title: "Legal article" },
-      { id: 8, windowId: 1, index: 7, groupId: -1, url: "https://walmart.com/", title: "Walmart" },
-      { id: 9, windowId: 1, index: 8, groupId: -1, url: "https://amazon.in/", title: "Amazon" }
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://theverge.com/", title: "The Verge" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://arstechnica.com/", title: "Ars Technica" },
+      { id: 4, windowId: 1, index: 3, groupId: -1, url: "https://flipkart.com/", title: "Flipkart" },
+      { id: 5, windowId: 1, index: 4, groupId: -1, url: "https://firstcry.com/", title: "FirstCry" },
+      { id: 6, windowId: 1, index: 5, groupId: -1, url: "https://example.com/", title: "Unrelated" }
     ]
   });
   await settle();
@@ -1500,24 +1583,26 @@ test("organisation rejects AI plans that mix known roles or smuggle in unknown t
   const organised = await harness.send({
     type: "ORGANIZE_TABS",
     tabPlans: [
-      { title: "Online Courses", tabIds: [1, 2, 3, 4] },
-      { title: "Social Media", tabIds: [5, 6] },
-      { title: "Online Shopping", tabIds: [7, 8] },
-      { title: "Online Courses", tabIds: [2, 3] },
-      { title: "Online Shopping", tabIds: [8, 9] }
+      { title: "Tech news", tabIds: [1, 2, 3] },
+      { title: "Shopping", tabIds: [4, 5, 999] },
+      { title: "Related tabs", tabIds: [5, 6] }
     ]
   });
 
   assert.equal(organised.ok, true);
   assert.equal(organised.groups.length, 2);
-  assert.equal(harness.tabs.find((tab) => tab.id === 2).groupId, harness.tabs.find((tab) => tab.id === 3).groupId);
-  assert.equal(harness.tabs.find((tab) => tab.id === 8).groupId, harness.tabs.find((tab) => tab.id === 9).groupId);
-  for (const tabId of [1, 4, 5, 6, 7]) {
-    assert.equal(harness.tabs.find((tab) => tab.id === tabId).groupId, -1);
-  }
+  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, harness.tabs.find((tab) => tab.id === 3).groupId);
+  assert.equal(harness.tabs.find((tab) => tab.id === 4).groupId, harness.tabs.find((tab) => tab.id === 5).groupId);
+  assert.equal(harness.tabs.find((tab) => tab.id === 6).groupId, -1);
+  assert.equal(harness.tabGroups.get(1).collapsed, true);
+  assert.equal(harness.tabGroups.get(2).collapsed, true);
+  assert.deepEqual(harness.tabGroupMoves, [
+    { groupId: 2, index: 0 },
+    { groupId: 1, index: 0 }
+  ]);
 });
 
-test("organisation leaves tabs alone when every explicit AI plan is rejected", async () => {
+test("organisation falls back to obvious local groups when every explicit AI plan is structurally invalid", async () => {
   const harness = createHarness({
     initialState: baseState(),
     tabs: [
@@ -1531,15 +1616,21 @@ test("organisation leaves tabs alone when every explicit AI plan is rejected", a
 
   const organised = await harness.send({
     type: "ORGANIZE_TABS",
-    tabPlans: [{ title: "Online Courses", tabIds: [1, 2, 3, 4] }]
+    tabPlans: [
+      { title: "Related tabs", tabIds: [1, 2] },
+      { title: "Course", tabIds: [3] },
+      { title: "Shopping", tabIds: [999, 1000] }
+    ]
   });
 
   assert.equal(organised.ok, true);
-  assert.equal(organised.usedLocalFallback, false);
-  assert.equal(organised.groups.length, 0);
-  for (const tabId of [1, 2, 3, 4]) {
-    assert.equal(harness.tabs.find((tab) => tab.id === tabId).groupId, -1);
-  }
+  assert.equal(organised.usedLocalFallback, true);
+  assert.equal(organised.groups.length, 1);
+  assert.equal(harness.tabGroups.get(1).title, "Learning");
+  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, 1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 2).groupId, 1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, -1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 4).groupId, -1);
 });
 
 async function eventsCall(event, ...args) {

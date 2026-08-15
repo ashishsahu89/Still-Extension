@@ -1,8 +1,4 @@
 (() => {
-  const normalizeHost = (host) => host.replace(/^www\./, "").toLowerCase();
-  const matchesProtected = (host, siteHost) =>
-    host === siteHost || host.endsWith(`.${siteHost}`);
-
   function formatRemaining(milliseconds) {
     const total = Math.max(0, Math.ceil(milliseconds / 1000));
     const minutes = Math.floor(total / 60);
@@ -12,35 +8,9 @@
 
   async function initialize() {
     if (document.querySelector("#still-pass-countdown")) return;
-    const data = await chrome.storage.local.get([
-      "passes",
-      "protectedSites",
-      "focus",
-      "activeRoutine"
-    ]);
-    const host = normalizeHost(location.hostname);
-    const passEntries =
-      data.passes && typeof data.passes === "object"
-        ? Object.entries(data.passes)
-        : [];
-    const activePass = passEntries.find(
-      ([passHost, passEndAt]) =>
-        matchesProtected(host, passHost) && Number(passEndAt) > Date.now()
-    );
-    if (!activePass) return;
-    const [passHost, endAt] = activePass;
-    const availableSites = [
-      ...(Array.isArray(data.focus?.protectedSites)
-        ? data.focus.protectedSites
-        : []),
-      ...(Array.isArray(data.activeRoutine?.protectedSites)
-        ? data.activeRoutine.protectedSites
-        : []),
-      ...(Array.isArray(data.protectedSites) ? data.protectedSites : [])
-    ];
-    const site =
-      availableSites.find((item) => item?.host === passHost) ||
-      { host: passHost, label: passHost };
+    const context = await chrome.runtime.sendMessage({ type: "GET_PASS_COUNTDOWN" });
+    if (!context?.ok) return;
+    const { passHost, endAt, passDetail = {}, site = {} } = context;
 
     const hostElement = document.createElement("div");
     hostElement.id = "still-pass-countdown";
@@ -101,11 +71,15 @@
         }
         .copy {
           display: flex;
+          min-width: 0;
           align-items: baseline;
           gap: 7px;
           white-space: nowrap;
         }
         .label {
+          max-width: 180px;
+          overflow: hidden;
+          text-overflow: ellipsis;
           color: #687067;
           font-size: 11px;
           font-weight: 600;
@@ -153,7 +127,7 @@
       <div class="timer">
         <span class="mark" aria-hidden="true"></span>
         <span class="copy">
-          <span class="label">Intentional time</span>
+          <span class="label"></span>
           <strong class="remaining">${formatRemaining(endAt - Date.now())}</strong>
         </span>
         <button type="button">End now</button>
@@ -167,6 +141,13 @@
     const endButton = shadow.querySelector("button");
     let completed = false;
     let interval;
+    const taskLabel = String(passDetail.intention || "").trim().slice(0, 68);
+    label.textContent =
+      passDetail.kind === "task" && taskLabel
+        ? taskLabel
+        : passDetail.kind === "focus-break"
+          ? "Focus break"
+          : "Intentional time";
 
     async function expire(force = false) {
       if (completed) return;

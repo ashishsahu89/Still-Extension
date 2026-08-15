@@ -93,6 +93,17 @@
     };
   }
 
+  function resolveActiveConnectionId(connections = [], storedValue) {
+    const ids = new Set(
+      (Array.isArray(connections) ? connections : [])
+        .map((connection) => cleanText(connection?.id, 120))
+        .filter(Boolean)
+    );
+    if (storedValue === "") return "";
+    if (typeof storedValue === "string") return ids.has(storedValue) ? storedValue : "";
+    return ids.values().next().value || "";
+  }
+
   function validateConnection(input = {}, apiKey = "") {
     const preset = providerFor(input.provider);
     if (!preset) return { ok: false, field: "provider", error: "Choose a provider." };
@@ -118,16 +129,28 @@
     }
 
     const secret = cleanText(apiKey, MAX_API_KEY_LENGTH);
-    if (preset.requiresApiKey && !secret) {
+    // A generic OpenAI-compatible connection can point at a local server
+    // (which commonly needs no key) or a hosted provider such as Fireworks
+    // (which does). Treat remote compatible endpoints as authenticated by
+    // default so we never make a misleading unauthenticated request.
+    const needsApiKey = !connection.local && (preset.requiresApiKey || preset.id === "compatible");
+    if (needsApiKey && !secret) {
       return { ok: false, field: "apiKey", error: "Enter your API key." };
     }
 
     return { ok: true, connection, apiKey: secret };
   }
 
-  function requestFor(connection, apiKey, prompt = "Reply with the single word: ready") {
+  function requestFor(connection, apiKey, prompt = "Reply with the single word: ready", requestOptions = {}) {
     const headers = { "Content-Type": "application/json" };
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    const maxTokens = Math.max(1, Math.min(4096, Number(requestOptions.maxTokens) || 0));
+    const temperature = Number(requestOptions.temperature);
+    const reasoningEffort = ["low", "medium", "high", "xhigh", "max", "none"].includes(
+      String(requestOptions.reasoningEffort || "")
+    )
+      ? String(requestOptions.reasoningEffort)
+      : "";
     return {
       url: connection.endpoint,
       options: {
@@ -136,7 +159,10 @@
         body: JSON.stringify({
           model: connection.model,
           messages: [{ role: "user", content: prompt }],
-          stream: false
+          stream: false,
+          ...(maxTokens ? { max_tokens: maxTokens } : {}),
+          ...(Number.isFinite(temperature) ? { temperature: Math.max(0, Math.min(2, temperature)) } : {}),
+          ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {})
         })
       }
     };
@@ -216,7 +242,11 @@
     const timeoutMs = Math.max(1000, Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS);
     const controller = typeof AbortController === "function" ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
-    const request = requestFor(validated.connection, validated.apiKey, prompt);
+    const request = requestFor(validated.connection, validated.apiKey, prompt, {
+      maxTokens: options.maxTokens,
+      temperature: options.temperature,
+      reasoningEffort: options.reasoningEffort
+    });
     try {
       const response = await fetchImpl(request.url, {
         ...request.options,
@@ -254,6 +284,7 @@
     PROVIDERS,
     providerFor,
     normalizeConnection,
+    resolveActiveConnectionId,
     validateConnection,
     requestFor,
     complete,

@@ -25,6 +25,15 @@ test("provides privacy-aware presets for remote and local models", () => {
   assert.equal(adapter.PROVIDERS.lmstudio.endpoint, "http://localhost:1234/v1/chat/completions");
 });
 
+test("preserves an explicitly disabled external AI connection", () => {
+  const adapter = loadConnections();
+  const connections = [{ id: "model-a" }, { id: "model-b" }];
+  assert.equal(adapter.resolveActiveConnectionId(connections, ""), "");
+  assert.equal(adapter.resolveActiveConnectionId(connections, "model-b"), "model-b");
+  assert.equal(adapter.resolveActiveConnectionId(connections, "missing"), "");
+  assert.equal(adapter.resolveActiveConnectionId(connections, undefined), "model-a");
+});
+
 test("requires a key for OpenAI but not for a local Ollama model", () => {
   const adapter = loadConnections();
   const openai = adapter.validateConnection({
@@ -44,6 +53,27 @@ test("requires a key for OpenAI but not for a local Ollama model", () => {
   });
   assert.equal(ollama.ok, true);
   assert.equal(ollama.connection.local, true);
+});
+
+test("requires a key for hosted compatible APIs but not loopback compatible servers", () => {
+  const adapter = loadConnections();
+  const hosted = adapter.validateConnection({
+    provider: "compatible",
+    label: "Fireworks",
+    model: "accounts/example/models/example",
+    endpoint: "https://api.fireworks.ai/inference/v1/chat/completions"
+  });
+  assert.equal(hosted.ok, false);
+  assert.equal(hosted.field, "apiKey");
+
+  const local = adapter.validateConnection({
+    provider: "compatible",
+    label: "Local gateway",
+    model: "local-model",
+    endpoint: "http://127.0.0.1:8080/v1/chat/completions"
+  });
+  assert.equal(local.ok, true);
+  assert.equal(local.connection.local, true);
 });
 
 test("blocks unencrypted remote endpoints", () => {
@@ -73,6 +103,21 @@ test("puts the API key only in the authorization header", () => {
   assert.deepEqual(JSON.parse(request.options.body).messages, [
     { role: "user", content: "Reply with the single word: ready" }
   ]);
+});
+
+test("can bound a completion without changing the default request", () => {
+  const adapter = loadConnections();
+  const request = adapter.requestFor(
+    { model: "example-model", endpoint: "https://api.example.com/v1/chat/completions" },
+    "secret-key",
+    "Organise these tabs.",
+    { maxTokens: 500, temperature: 0, reasoningEffort: "none" }
+  );
+  const body = JSON.parse(request.options.body);
+  assert.equal(body.max_tokens, 500);
+  assert.equal(body.temperature, 0);
+  assert.equal(body.reasoning_effort, "none");
+  assert.equal(body.messages[0].content, "Organise these tabs.");
 });
 
 test("tests an OpenAI-compatible response without exposing response content", async () => {
