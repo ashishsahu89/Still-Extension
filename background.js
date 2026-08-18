@@ -1,3 +1,5 @@
+if (typeof importScripts === "function") importScripts("tab-organizer.js");
+
 const DEFAULTS = {
   protectedSites: [
     { host: "youtube.com", label: "YouTube", enabled: true },
@@ -12,6 +14,9 @@ const DEFAULTS = {
   focus: null,
   passes: {},
   passStarts: {},
+  passDetails: {},
+  mindfulWindows: {},
+  focusBreak: null,
   stats: {},
   siteStats: {},
   usageStats: {},
@@ -21,6 +26,8 @@ const DEFAULTS = {
   chromeAIEnabled: false,
   aiCategoryCache: {},
   aiInsightCache: {},
+  aiConnections: [],
+  activeAIConnectionId: "",
   impulseEvents: [],
   focusSessions: [],
   intentions: [],
@@ -34,7 +41,7 @@ const DEFAULTS = {
 const EXIT_COOLDOWN_MS = 20000;
 const ROUTINE_NOTICE_MS = 5 * 60 * 1000;
 const ROUTINE_ALARM_PREFIX = "routine:";
-const CURRENT_STORAGE_SCHEMA = 2;
+const CURRENT_STORAGE_SCHEMA = 3;
 const RAW_EVENT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const DAILY_RETENTION_MS = 550 * 24 * 60 * 60 * 1000;
 const USAGE_HEARTBEAT_ALARM = "usage-heartbeat";
@@ -43,8 +50,16 @@ const MAX_USAGE_GAP_MS = 5 * 60 * 1000;
 const MAX_USAGE_EVENTS = 5000;
 const STRICT_RULE_ID = 10001;
 const PASS_SCRIPT_PREFIX = "still-pass-";
+const PASS_DURATION_MS = 5 * 60 * 1000;
+const MINDFUL_WINDOW_MS = 30 * 60 * 1000;
+const TASK_DURATIONS_MINUTES = new Set([15, 30, 60]);
+const TAB_ORGANIZER_STATE_KEY = "tabOrganizerState";
+const TAB_GROUP_NONE = globalThis.StillTabOrganizer?.TAB_GROUP_NONE ?? -1;
+const TAB_GROUP_AUTO_RENAME_DELAY_MS = 700;
 
 let stateTaskQueue = Promise.resolve();
+const tabGroupRenameTimers = new Map();
+const recentStillGroupTitles = new Map();
 
 function reportBackgroundError(context, error) {
   const message = error instanceof Error ? error.message : String(error);
@@ -66,6 +81,11 @@ async function ensureDefaults() {
     if (stored[key] === undefined) missing[key] = value;
   }
   if (Object.keys(missing).length) await chrome.storage.local.set(missing);
+}
+
+async function restrictLocalStorageToStill() {
+  if (typeof chrome.storage?.local?.setAccessLevel !== "function") return;
+  await chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" });
 }
 
 function pruneDatedRecord(record = {}, cutoff) {
@@ -126,6 +146,10 @@ async function migrateStorage() {
       version = 2;
       continue;
     }
+    if (version === 2) {
+      version = 3;
+      continue;
+    }
     throw new Error(`No storage migration is available from version ${version}`);
   }
 
@@ -169,6 +193,37 @@ function validStoredHost(host) {
 
 function safeText(value, maxLength) {
   return String(value || "").trim().slice(0, maxLength);
+}
+
+function safeTimestamp(value, fallback = 0) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : fallback;
+}
+
+function normalizedMindfulWindows(record = {}, now = Date.now()) {
+  const windows =
+    record && typeof record === "object" && !Array.isArray(record) ? record : {};
+  const normalized = {};
+  for (const [rawHost, rawWindow] of Object.entries(windows)) {
+    const host = normalizeHost(rawHost);
+    const cooldownUntil = safeTimestamp(rawWindow?.cooldownUntil);
+    if (!validStoredHost(host) || cooldownUntil <= now) continue;
+    normalized[host] = {
+      startedAt: safeTimestamp(rawWindow?.startedAt),
+      cooldownUntil,
+      taskEligible: rawWindow?.taskEligible === true,
+      taskUsed: rawWindow?.taskUsed === true,
+      lastExpiredAt: safeTimestamp(rawWindow?.lastExpiredAt)
+    };
+  }
+  return normalized;
+}
+
+function currentFocusBreak(focusBreak, focus) {
+  if (!focusBreak || !focus?.startedAt) return null;
+  return Number(focusBreak.focusStartedAt) === Number(focus.startedAt) && focusBreak.usedAt
+    ? focusBreak
+    : null;
 }
 
 function enabledSites(sites = []) {
@@ -280,6 +335,10 @@ function interventionUrl(url, result) {
   page.searchParams.set("focus", String(result.focusActive));
   if (result.focusEndAt) page.searchParams.set("focusEndAt", String(result.focusEndAt));
   page.searchParams.set("strict", String(result.strictFocus));
+  if (result.interventionState) page.searchParams.set("state", result.interventionState);
+  if (result.cooldownUntil) page.searchParams.set("cooldownUntil", String(result.cooldownUntil));
+  if (result.taskEligible) page.searchParams.set("taskEligible", "true");
+  if (result.taskMinutes) page.searchParams.set("taskMinutes", String(result.taskMinutes));
   return page.toString();
 }
 
@@ -663,6 +722,8 @@ async function shouldIntercept(url) {
     "strictFocus",
     "focus",
     "passes",
+    "mindfulWindows",
+    "focusBreak",
     "activeRoutine"
   ]);
   const now = Date.now();
@@ -683,6 +744,31 @@ async function shouldIntercept(url) {
     : data.strictFocus !== false;
   if ((!focusActive || !strictFocus) && (data.passes?.[site.host] || 0) > now) {
     return null;
+  }
+
+  if (focusActive && !strictFocus && currentFocusBreak(data.focusBreak, data.focus)) {
+    return {
+      site,
+      focusActive,
+      focusEndAt: data.focus?.endAt || 0,
+      strictFocus,
+      interventionState: "focus-break-used"
+    };
+  }
+
+  if (!focusActive) {
+    const mindfulWindow = normalizedMindfulWindows(data.mindfulWindows, now)[site.host];
+    if (mindfulWindow?.cooldownUntil > now) {
+      return {
+        site,
+        focusActive,
+        focusEndAt: 0,
+        strictFocus,
+        interventionState: "cooldown",
+        cooldownUntil: mindfulWindow.cooldownUntil,
+        taskEligible: mindfulWindow.taskEligible === true && mindfulWindow.taskUsed !== true
+      };
+    }
   }
 
   return {
@@ -721,6 +807,11 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
 chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
   void runStateTask("history-navigation", () => handleNavigation(details));
 });
+if (chrome.webNavigation.onCreatedNavigationTarget) {
+  chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => {
+    void runStateTask("tab-created-from-link", () => addChildTabToSourceGroup(details));
+  });
+}
 
 async function redirectOpenProtectedTabs(focus) {
   const tabs = await chrome.tabs.query({});
@@ -762,7 +853,11 @@ async function finishFocus({
     "focus",
     "stats",
     "focusExits",
-    "focusSessions"
+    "focusSessions",
+    "passes",
+    "passStarts",
+    "passDetails",
+    "siteStats"
   ]);
   const focus = data.focus;
   if (!focus) return null;
@@ -814,12 +909,21 @@ async function finishFocus({
     .slice(0, 500);
 
   await chrome.alarms.clear("focus-complete");
+  for (const siteHost of Object.keys(data.passes || {})) {
+    await chrome.alarms.clear(`pass:${siteHost}`);
+  }
   await syncStrictRules(null);
+  await syncPassContentScripts({});
   await chrome.storage.local.set({
     focus: null,
     stats,
     focusExits: retainedExits,
-    focusSessions: retainedSessions
+    focusSessions: retainedSessions,
+    passes: {},
+    passStarts: {},
+    passDetails: {},
+    focusBreak: null,
+    siteStats: closePasses(data, endedAt)
   });
   await chrome.action.setBadgeText({ text: "" });
   return { actualSeconds, completed };
@@ -847,6 +951,8 @@ async function startFocus({
     "activeRoutine",
     "passes",
     "passStarts",
+    "passDetails",
+    "focusBreak",
     "siteStats"
   ]);
   if (data.focus?.endAt > Date.now()) {
@@ -878,6 +984,8 @@ async function startFocus({
       activeRoutine: null,
       passes: {},
       passStarts: {},
+      passDetails: {},
+      focusBreak: null,
       siteStats: closePasses(data, startedAt)
     });
     await syncStrictRules(focus);
@@ -889,6 +997,8 @@ async function startFocus({
         activeRoutine: data.activeRoutine || null,
         passes: data.passes || {},
         passStarts: data.passStarts || {},
+        passDetails: data.passDetails || {},
+        focusBreak: data.focusBreak || null,
         siteStats: data.siteStats || {}
       }),
       syncStrictRules(null),
@@ -948,6 +1058,8 @@ async function expirePass(siteHost, preferredTab) {
   const data = await chrome.storage.local.get([
     "passes",
     "passStarts",
+    "passDetails",
+    "mindfulWindows",
     "siteStats",
     "protectedSites",
     "focus",
@@ -956,9 +1068,15 @@ async function expirePass(siteHost, preferredTab) {
   ]);
   const passes = { ...(data.passes || {}) };
   const passStarts = { ...(data.passStarts || {}) };
+  const passDetails = { ...(data.passDetails || {}) };
+  const mindfulWindows = normalizedMindfulWindows(data.mindfulWindows);
   let siteStats = { ...(data.siteStats || {}) };
   const startedAt = passStarts[siteHost];
   const scheduledEnd = passes[siteHost] || Date.now();
+  const details =
+    passDetails[siteHost] && typeof passDetails[siteHost] === "object"
+      ? passDetails[siteHost]
+      : { kind: "mindful", startedAt, endAt: scheduledEnd };
   if (startedAt) {
     siteStats = addSiteUsage(
       siteStats,
@@ -969,11 +1087,32 @@ async function expirePass(siteHost, preferredTab) {
   }
   delete passes[siteHost];
   delete passStarts[siteHost];
-  await chrome.storage.local.set({ passes, passStarts, siteStats });
+  delete passDetails[siteHost];
+
+  const now = Date.now();
+  if (details.kind === "mindful") {
+    const existing = mindfulWindows[siteHost] || {};
+    mindfulWindows[siteHost] = {
+      startedAt: safeTimestamp(existing.startedAt, safeTimestamp(startedAt, now)),
+      cooldownUntil: Math.max(
+        safeTimestamp(existing.cooldownUntil),
+        safeTimestamp(startedAt, now) + MINDFUL_WINDOW_MS
+      ),
+      taskEligible: true,
+      taskUsed: existing.taskUsed === true,
+      lastExpiredAt: now
+    };
+  }
+  await chrome.storage.local.set({
+    passes,
+    passStarts,
+    passDetails,
+    mindfulWindows,
+    siteStats
+  });
   await syncPassContentScripts(passes);
   await chrome.alarms.clear(`pass:${siteHost}`);
 
-  const now = Date.now();
   const focusActive = data.focus?.endAt > now;
   const routineActive = !focusActive && data.activeRoutine?.endAt > now;
   const focusSite = focusActive
@@ -990,9 +1129,22 @@ async function expirePass(siteHost, preferredTab) {
     site,
     focusActive,
     focusEndAt: data.focus?.endAt || 0,
-    strictFocus: focusActive ? data.focus?.strict !== false : data.strictFocus !== false
+    strictFocus: focusActive ? data.focus?.strict !== false : data.strictFocus !== false,
+    interventionState:
+      details.kind === "focus-break"
+        ? "focus-break-ended"
+        : details.kind === "task"
+          ? "task-expired"
+          : "pass-expired",
+    cooldownUntil: mindfulWindows[siteHost]?.cooldownUntil || 0,
+    taskEligible:
+      details.kind === "mindful" && mindfulWindows[siteHost]?.taskUsed !== true,
+    taskMinutes: Number(details.taskMinutes) || 0
   };
-  const tabs = preferredTab ? [preferredTab] : await chrome.tabs.query({});
+  const allTabs = await chrome.tabs.query({});
+  const tabs = preferredTab?.id && !allTabs.some((tab) => tab.id === preferredTab.id)
+    ? [...allTabs, preferredTab]
+    : allTabs;
 
   await Promise.all(
     tabs.map(async (tab) => {
@@ -1020,8 +1172,11 @@ async function restorePassState() {
   const data = await chrome.storage.local.get([
     "passes",
     "passStarts",
+    "passDetails",
     "siteStats",
-    "focus"
+    "focus",
+    "mindfulWindows",
+    "focusBreak"
   ]);
   const passes = data.passes || {};
   const focus = data.focus;
@@ -1033,6 +1188,8 @@ async function restorePassState() {
       await chrome.storage.local.set({
         passes: {},
         passStarts: {},
+        passDetails: {},
+        focusBreak: null,
         siteStats: closePasses(data)
       });
     }
@@ -1043,7 +1200,14 @@ async function restorePassState() {
     if (endAt <= Date.now()) await expirePass(siteHost);
     else chrome.alarms.create(`pass:${siteHost}`, { when: endAt });
   }
-  const { passes: currentPasses = {} } = await chrome.storage.local.get("passes");
+  const { passes: currentPasses = {}, mindfulWindows = {} } = await chrome.storage.local.get([
+    "passes",
+    "mindfulWindows"
+  ]);
+  const prunedWindows = normalizedMindfulWindows(mindfulWindows);
+  if (JSON.stringify(prunedWindows) !== JSON.stringify(mindfulWindows || {})) {
+    await chrome.storage.local.set({ mindfulWindows: prunedWindows });
+  }
   await syncPassContentScripts(currentPasses);
 }
 
@@ -1245,10 +1409,300 @@ async function reconcileRoutineState() {
   await scheduleRoutineAlarms(data.routines || []);
 }
 
+function normalizedTabOrganizerState(value = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const managedGroups = {};
+  for (const [rawGroupId, rawGroup] of Object.entries(source.managedGroups || {})) {
+    const groupId = Number(rawGroupId);
+    if (!Number.isInteger(groupId) || groupId < 0 || !rawGroup || typeof rawGroup !== "object") {
+      continue;
+    }
+    managedGroups[groupId] = {
+      windowId: Number.isInteger(rawGroup.windowId) ? rawGroup.windowId : 0,
+      autoName: safeText(rawGroup.autoName, 60) || "Related tabs",
+      semanticName: safeText(rawGroup.semanticName, 60),
+      manualName: rawGroup.manualName === true,
+      color: safeText(rawGroup.color, 20),
+      createdAt: safeTimestamp(rawGroup.createdAt, Date.now()),
+      updatedAt: safeTimestamp(rawGroup.updatedAt, Date.now())
+    };
+  }
+  const undoByWindow = {};
+  for (const [rawWindowId, undo] of Object.entries(source.undoByWindow || {})) {
+    const windowId = Number(rawWindowId);
+    if (!Number.isInteger(windowId) || !undo || typeof undo !== "object") continue;
+    const groups = Array.isArray(undo.groups)
+      ? undo.groups
+          .map((group) => ({
+            groupId: Number(group?.groupId),
+            tabIds: (Array.isArray(group?.tabIds) ? group.tabIds : []).filter(Number.isInteger)
+          }))
+          .filter((group) => group.groupId >= 0 && group.tabIds.length)
+      : [];
+    if (groups.length) undoByWindow[windowId] = { groups, createdAt: safeTimestamp(undo.createdAt) };
+  }
+  return { managedGroups, undoByWindow };
+}
+
+async function getTabOrganizerState() {
+  const area = chrome.storage.session || chrome.storage.local;
+  const data = await area.get(TAB_ORGANIZER_STATE_KEY);
+  return normalizedTabOrganizerState(data[TAB_ORGANIZER_STATE_KEY]);
+}
+
+async function saveTabOrganizerState(state) {
+  const area = chrome.storage.session || chrome.storage.local;
+  await area.set({ [TAB_ORGANIZER_STATE_KEY]: normalizedTabOrganizerState(state) });
+}
+
+function tabOrganizerForWindow(state, windowId) {
+  return Object.entries(state.managedGroups)
+    .filter(([, group]) => group.windowId === windowId)
+    .map(([groupId, group]) => ({ groupId: Number(groupId), ...group }));
+}
+
+async function safeTabGroupUpdate(groupId, changes) {
+  if (!chrome.tabGroups?.update) return null;
+  recentStillGroupTitles.set(Number(groupId), {
+    title: safeText(changes.title, 60),
+    expiresAt: Date.now() + 2500
+  });
+  try {
+    return await chrome.tabGroups.update(Number(groupId), changes);
+  } catch {
+    return null;
+  }
+}
+
+async function safeTabGroupMove(groupId, index = 0) {
+  if (!chrome.tabGroups?.move) return null;
+  try {
+    return await chrome.tabGroups.move(Number(groupId), { index });
+  } catch {
+    return null;
+  }
+}
+
+async function tabsInGroup(groupId) {
+  const tabs = await chrome.tabs.query({});
+  return tabs.filter((tab) => tab.groupId === groupId);
+}
+
+async function applyAutoGroupName(groupId) {
+  const state = await getTabOrganizerState();
+  const metadata = state.managedGroups[groupId];
+  if (!metadata || metadata.manualName) return null;
+  const tabs = await tabsInGroup(groupId);
+  if (!tabs.length) {
+    delete state.managedGroups[groupId];
+    await saveTabOrganizerState(state);
+    return null;
+  }
+  if (tabs.length === 1) {
+    try {
+      await chrome.tabs.ungroup([tabs[0].id]);
+    } catch {
+      // If Chrome already removed the group, clearing Still's session metadata is enough.
+    }
+    delete state.managedGroups[groupId];
+    await saveTabOrganizerState(state);
+    return null;
+  }
+  const localTitle = globalThis.StillTabOrganizer.nameForTabs(tabs);
+  const title = localTitle === "Related tabs" && metadata.semanticName
+    ? metadata.semanticName
+    : localTitle;
+  const color = globalThis.StillTabOrganizer.colorForName(title);
+  await safeTabGroupUpdate(groupId, { title, color });
+  state.managedGroups[groupId] = {
+    ...metadata,
+    autoName: title,
+    color,
+    updatedAt: Date.now()
+  };
+  await saveTabOrganizerState(state);
+  return globalThis.StillTabOrganizer.groupPayload(groupId, tabs, title);
+}
+
+async function refreshAutomaticTabGroupNames(windowId = null) {
+  const state = await getTabOrganizerState();
+  const groupIds = Object.entries(state.managedGroups)
+    .filter(([, group]) => windowId === null || group.windowId === windowId)
+    .filter(([, group]) => !group.manualName)
+    .map(([groupId]) => Number(groupId));
+  for (const groupId of groupIds) await applyAutoGroupName(groupId);
+}
+
+function scheduleAutoGroupName(groupId) {
+  if (!Number.isInteger(groupId) || groupId < 0) return;
+  const existing = tabGroupRenameTimers.get(groupId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    tabGroupRenameTimers.delete(groupId);
+    void runStateTask(`tab-group-rename:${groupId}`, () => applyAutoGroupName(groupId));
+  }, TAB_GROUP_AUTO_RENAME_DELAY_MS);
+  tabGroupRenameTimers.set(groupId, timer);
+}
+
+async function organizeTabsInWindow(windowId, categoryOverrides = {}, tabPlans = null) {
+  if (!chrome.tabs.group || !chrome.tabGroups?.update) {
+    return { ok: false, reason: "tab-groups-unavailable" };
+  }
+  const tabs = await chrome.tabs.query({ windowId });
+  const explicitPlans = Array.isArray(tabPlans)
+    ? globalThis.StillTabOrganizer.plansForExplicitGroups(tabs, tabPlans)
+    : null;
+  const hasExplicitPlan = Array.isArray(tabPlans);
+  const localPlans = globalThis.StillTabOrganizer.plansForTabs(tabs, categoryOverrides);
+  let usedLocalFallback = false;
+  let plans = localPlans;
+  if (hasExplicitPlan) {
+    // Keep every valid semantic group from the model, then fill only its unused
+    // tabs from Still's deterministic taxonomy. This makes obvious groups such
+    // as X + Reddit + Facebook reliable without vetoing cross-domain AI plans.
+    const usedTabIds = new Set(explicitPlans.flatMap((plan) => plan.tabs.map((tab) => tab.id)));
+    const supplementalPlans = localPlans.flatMap((plan) => {
+      const remainingTabs = plan.tabs.filter((tab) => !usedTabIds.has(tab.id));
+      if (remainingTabs.length < 2) return [];
+      const title = globalThis.StillTabOrganizer.nameForTabs(remainingTabs, categoryOverrides);
+      remainingTabs.forEach((tab) => usedTabIds.add(tab.id));
+      return [{
+        title,
+        color: globalThis.StillTabOrganizer.colorForName(title),
+        tabs: remainingTabs
+      }];
+    });
+    usedLocalFallback = supplementalPlans.length > 0;
+    plans = [...explicitPlans, ...supplementalPlans]
+      .sort((left, right) => left.tabs[0].index - right.tabs[0].index);
+  }
+  if (!plans.length) {
+    return { ok: true, groups: [], message: "Nothing to organise yet.", usedLocalFallback };
+  }
+
+  const state = await getTabOrganizerState();
+  const created = [];
+  for (const plan of plans) {
+    const groupId = await chrome.tabs.group({ tabIds: plan.tabs.map((tab) => tab.id) });
+    await safeTabGroupUpdate(groupId, { title: plan.title, color: plan.color, collapsed: true });
+    state.managedGroups[groupId] = {
+      windowId,
+      autoName: plan.title,
+      semanticName: plan.title,
+      manualName: false,
+      color: plan.color,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    created.push({ groupId, tabIds: plan.tabs.map((tab) => tab.id) });
+  }
+  // Moving from rightmost to leftmost preserves the plans' original visual
+  // order while placing the complete set of newly created groups at the left.
+  for (const { groupId } of [...created].reverse()) {
+    await safeTabGroupMove(groupId, 0);
+  }
+  state.undoByWindow[windowId] = { groups: created, createdAt: Date.now() };
+  await saveTabOrganizerState(state);
+  const groups = await Promise.all(
+    created.map(async ({ groupId }) =>
+      globalThis.StillTabOrganizer.groupPayload(groupId, await tabsInGroup(groupId), state.managedGroups[groupId].autoName)
+    )
+  );
+  return { ok: true, groups, undoAvailable: true, usedLocalFallback };
+}
+
+async function undoTabOrganization(windowId) {
+  if (!chrome.tabs.ungroup) return { ok: false, reason: "tab-groups-unavailable" };
+  const state = await getTabOrganizerState();
+  const undo = state.undoByWindow[windowId];
+  if (!undo?.groups?.length) return { ok: false, reason: "nothing-to-undo" };
+  for (const { groupId, tabIds } of undo.groups) {
+    const currentTabs = await tabsInGroup(groupId);
+    const currentIds = new Set(currentTabs.map((tab) => tab.id));
+    const ownedIds = tabIds.filter((tabId) => currentIds.has(tabId));
+    if (ownedIds.length) await chrome.tabs.ungroup(ownedIds);
+    delete state.managedGroups[groupId];
+  }
+  delete state.undoByWindow[windowId];
+  await saveTabOrganizerState(state);
+  return { ok: true };
+}
+
+async function addChildTabToSourceGroup(details) {
+  if (!Number.isInteger(details?.sourceTabId) || !Number.isInteger(details?.tabId)) return;
+  if (!chrome.tabs.group || !chrome.tabGroups?.update) return;
+  const [source, target] = await Promise.all([
+    chrome.tabs.get(details.sourceTabId),
+    chrome.tabs.get(details.tabId)
+  ]);
+  const targetUrl = globalThis.StillTabOrganizer.hostFromUrl(target?.url)
+    ? target.url
+    : target?.pendingUrl || details.url;
+  const navigatedTarget = { ...target, url: targetUrl };
+  if (!globalThis.StillTabOrganizer.isOrganizable(source) ||
+      !globalThis.StillTabOrganizer.isOrganizable(navigatedTarget) ||
+      source.windowId !== target.windowId) {
+    return;
+  }
+  const state = await getTabOrganizerState();
+  let groupId = source.groupId;
+  if (!Number.isInteger(groupId) || groupId === TAB_GROUP_NONE) {
+    const title = globalThis.StillTabOrganizer.nameForTabs([source, navigatedTarget]);
+    const color = globalThis.StillTabOrganizer.colorForName(title);
+    groupId = await chrome.tabs.group({ tabIds: [source.id, navigatedTarget.id] });
+    await safeTabGroupUpdate(groupId, { title, color, collapsed: true });
+    await safeTabGroupMove(groupId, 0);
+    state.managedGroups[groupId] = {
+      windowId: source.windowId,
+      autoName: title,
+      manualName: false,
+      color,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+  } else {
+    await chrome.tabs.group({ groupId, tabIds: [navigatedTarget.id] });
+  }
+  await saveTabOrganizerState(state);
+  scheduleAutoGroupName(groupId);
+}
+
+async function applyTabGroupNames(groups) {
+  const state = await getTabOrganizerState();
+  const applied = [];
+  for (const suggestion of Array.isArray(groups) ? groups.slice(0, 20) : []) {
+    const groupId = Number(suggestion?.groupId);
+    const title = safeText(suggestion?.title, 60);
+    const metadata = state.managedGroups[groupId];
+    if (!Number.isInteger(groupId) || groupId < 0 || !metadata || !title) continue;
+    await safeTabGroupUpdate(groupId, { title, color: metadata.color || "blue" });
+    state.managedGroups[groupId] = {
+      ...metadata,
+      autoName: title,
+      manualName: false,
+      updatedAt: Date.now()
+    };
+    applied.push(groupId);
+  }
+  await saveTabOrganizerState(state);
+  return { ok: true, applied };
+}
+
+async function tabOrganizerStatus(windowId) {
+  const [tabs, state] = await Promise.all([chrome.tabs.query({ windowId }), getTabOrganizerState()]);
+  return {
+    ok: true,
+    eligibleTabs: tabs.filter(globalThis.StillTabOrganizer.isOrganizable).length,
+    managedGroups: tabOrganizerForWindow(state, windowId).length,
+    undoAvailable: Boolean(state.undoByWindow[windowId]?.groups?.length)
+  };
+}
+
 let reconcilePromise;
 function reconcileState() {
   if (reconcilePromise) return reconcilePromise;
   reconcilePromise = (async () => {
+    await restrictLocalStorageToStill();
     await migrateStorage();
     await ensureDefaults();
     await reconcileUsageTracker();
@@ -1334,13 +1788,59 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.tabs.onActivated.addListener(() => {
   void runStateTask("usage-tab-activated", reconcileUsageTracker);
 });
-chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
-  if (!changeInfo.url) return;
-  void runStateTask("usage-tab-url-changed", reconcileUsageTracker);
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url) {
+    void runStateTask("usage-tab-url-changed", reconcileUsageTracker);
+  }
+  if (Number.isInteger(changeInfo.groupId)) {
+    if (changeInfo.groupId !== TAB_GROUP_NONE) scheduleAutoGroupName(changeInfo.groupId);
+    if (Number.isInteger(tab?.groupId) && tab.groupId !== TAB_GROUP_NONE) {
+      scheduleAutoGroupName(tab.groupId);
+    }
+    void runStateTask("tab-group-membership-changed", () =>
+      refreshAutomaticTabGroupNames(Number.isInteger(tab?.windowId) ? tab.windowId : null)
+    );
+  }
 });
-chrome.tabs.onRemoved.addListener(() => {
+chrome.tabs.onRemoved.addListener((_tabId, removeInfo) => {
   void runStateTask("usage-tab-removed", reconcileUsageTracker);
+  if (Number.isInteger(removeInfo?.groupId) && removeInfo.groupId !== TAB_GROUP_NONE) {
+    scheduleAutoGroupName(removeInfo.groupId);
+  }
+  void runStateTask("tab-removed-auto-names", () =>
+    refreshAutomaticTabGroupNames(Number.isInteger(removeInfo?.windowId) ? removeInfo.windowId : null)
+  );
 });
+if (chrome.tabGroups?.onUpdated) {
+  chrome.tabGroups.onUpdated.addListener((group) => {
+    const recent = recentStillGroupTitles.get(Number(group?.id));
+    if (recent && recent.expiresAt > Date.now() && recent.title === group.title) return;
+    void runStateTask("tab-group-manually-renamed", async () => {
+      const state = await getTabOrganizerState();
+      const metadata = state.managedGroups[group?.id];
+      if (!metadata || !safeText(group?.title, 60)) return;
+      state.managedGroups[group.id] = {
+        ...metadata,
+        autoName: safeText(group.title, 60),
+        manualName: true,
+        updatedAt: Date.now()
+      };
+      await saveTabOrganizerState(state);
+    });
+  });
+}
+if (chrome.tabGroups?.onRemoved) {
+  chrome.tabGroups.onRemoved.addListener((group) => {
+    void runStateTask("tab-group-removed", async () => {
+      const state = await getTabOrganizerState();
+      delete state.managedGroups[group?.id];
+      for (const undo of Object.values(state.undoByWindow)) {
+        undo.groups = undo.groups.filter((item) => item.groupId !== group?.id);
+      }
+      await saveTabOrganizerState(state);
+    });
+  });
+}
 chrome.windows.onFocusChanged.addListener((windowId) => {
   void runStateTask(
     "usage-window-focus-changed",
@@ -1408,6 +1908,57 @@ function senderMatchesHost(sender, host) {
   }
 }
 
+async function passCountdownContext(sender) {
+  if (sender?.id !== chrome.runtime.id || !sender.tab?.url) {
+    return { ok: false, reason: "invalid-sender" };
+  }
+  let currentHost = "";
+  try {
+    currentHost = normalizeHost(new URL(sender.tab.url).hostname);
+  } catch {
+    return { ok: false, reason: "invalid-sender" };
+  }
+  const data = await chrome.storage.local.get([
+    "passes",
+    "passDetails",
+    "protectedSites",
+    "focus",
+    "activeRoutine"
+  ]);
+  const activePass = Object.entries(data.passes || {}).find(
+    ([passHost, passEndAt]) =>
+      validStoredHost(passHost) && matchesProtected(currentHost, passHost) && Number(passEndAt) > Date.now()
+  );
+  if (!activePass) return { ok: false, reason: "no-active-pass" };
+  const [passHost, endAt] = activePass;
+  const detail = data.passDetails?.[passHost] || {};
+  const availableSites = [
+    ...(Array.isArray(data.focus?.protectedSites) ? data.focus.protectedSites : []),
+    ...(Array.isArray(data.activeRoutine?.protectedSites) ? data.activeRoutine.protectedSites : []),
+    ...(Array.isArray(data.protectedSites) ? data.protectedSites : [])
+  ];
+  const sourceSite = availableSites.find((item) => item?.host === passHost) || {};
+  return {
+    ok: true,
+    passHost,
+    endAt: Number(endAt),
+    passDetail: {
+      kind: safeText(detail.kind, 24),
+      intention: safeText(detail.intention, 68)
+    },
+    site: {
+      host: passHost,
+      label: safeText(sourceSite.label, 80) || passHost
+    }
+  };
+}
+
+async function tabOrganizerWindowId(sender) {
+  if (Number.isInteger(sender?.tab?.windowId)) return sender.tab.windowId;
+  const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  return Number.isInteger(activeTab?.windowId) ? activeTab.windowId : 0;
+}
+
 async function allowSite(message) {
   const host = normalizeHost(message.host);
   if (!validStoredHost(host)) return { ok: false, reason: "invalid-host" };
@@ -1418,6 +1969,9 @@ async function allowSite(message) {
     "activeRoutine",
     "passes",
     "passStarts",
+    "passDetails",
+    "mindfulWindows",
+    "focusBreak",
     "intentions"
   ]);
   const now = Date.now();
@@ -1436,27 +1990,151 @@ async function allowSite(message) {
   const site = availableSites.find((item) => item.host === host);
   if (!site) return { ok: false, reason: "site-not-protected" };
 
+  const mindfulWindows = normalizedMindfulWindows(data.mindfulWindows, now);
+  const existingMindfulWindow = mindfulWindows[host];
+  const existingFocusBreak = currentFocusBreak(data.focusBreak, data.focus);
+  if (focusActive && existingFocusBreak) {
+    return { ok: false, reason: "focus-break-used" };
+  }
+  if (!focusActive && existingMindfulWindow?.cooldownUntil > now) {
+    return {
+      ok: false,
+      reason: "mindful-cooldown",
+      cooldownUntil: existingMindfulWindow.cooldownUntil
+    };
+  }
+
   const startedAt = now;
-  const endAt = startedAt + 5 * 60000;
+  const endAt = startedAt + PASS_DURATION_MS;
   const passes = { ...(data.passes || {}), [host]: endAt };
   const passStarts = { ...(data.passStarts || {}), [host]: startedAt };
+  const passDetails = {
+    ...(data.passDetails || {}),
+    [host]: {
+      kind: focusActive ? "focus-break" : "mindful",
+      startedAt,
+      endAt,
+      intention: safeText(message.intention, 100)
+    }
+  };
+  const focusBreak = focusActive
+    ? { focusStartedAt: data.focus.startedAt, host, usedAt: startedAt }
+    : data.focusBreak || null;
+  if (!focusActive) {
+    mindfulWindows[host] = {
+      startedAt,
+      cooldownUntil: startedAt + MINDFUL_WINDOW_MS,
+      taskEligible: false,
+      taskUsed: false,
+      lastExpiredAt: 0
+    };
+  }
   const intention = safeText(message.intention, 100);
   const intentions = [...(data.intentions || [])];
   if (intention) {
     intentions.unshift({ text: intention, host, createdAt: startedAt });
     intentions.splice(30);
   }
-  await chrome.storage.local.set({ passes, passStarts, intentions });
+  await chrome.storage.local.set({
+    passes,
+    passStarts,
+    passDetails,
+    mindfulWindows,
+    focusBreak,
+    intentions
+  });
   try {
     await syncPassContentScripts(passes);
   } catch (error) {
     delete passes[host];
     delete passStarts[host];
-    await chrome.storage.local.set({ passes, passStarts });
+    delete passDetails[host];
+    if (!focusActive) delete mindfulWindows[host];
+    await chrome.storage.local.set({
+      passes,
+      passStarts,
+      passDetails,
+      mindfulWindows,
+      focusBreak: data.focusBreak || null
+    });
     throw error;
   }
   chrome.alarms.create(`pass:${host}`, { when: endAt });
-  return { ok: true, endAt };
+  return { ok: true, endAt, kind: focusActive ? "focus-break" : "mindful" };
+}
+
+async function startTaskAccess(message) {
+  const host = normalizeHost(message.host);
+  const taskMinutes = Number(message.minutes);
+  const intention = safeText(message.intention, 100);
+  if (!validStoredHost(host)) return { ok: false, reason: "invalid-host" };
+  if (!TASK_DURATIONS_MINUTES.has(taskMinutes)) {
+    return { ok: false, reason: "invalid-task-duration" };
+  }
+  if (!intention) return { ok: false, reason: "task-intention-required" };
+
+  const data = await chrome.storage.local.get([
+    "protectedSites",
+    "mindfulMode",
+    "focus",
+    "activeRoutine",
+    "passes",
+    "passStarts",
+    "passDetails",
+    "mindfulWindows",
+    "intentions"
+  ]);
+  const now = Date.now();
+  if (data.focus?.endAt > now) return { ok: false, reason: "focus-active" };
+  if (!data.mindfulMode && !(data.activeRoutine?.endAt > now)) {
+    return { ok: false, reason: "mindful-mode-disabled" };
+  }
+  const availableSites = data.activeRoutine?.endAt > now
+    ? data.activeRoutine.protectedSites || []
+    : enabledSites(data.protectedSites);
+  const site = availableSites.find((item) => item.host === host);
+  if (!site) return { ok: false, reason: "site-not-protected" };
+
+  const mindfulWindows = normalizedMindfulWindows(data.mindfulWindows, now);
+  const window = mindfulWindows[host];
+  if (!window || window.cooldownUntil <= now || !window.taskEligible || window.taskUsed) {
+    return { ok: false, reason: "task-not-available" };
+  }
+  if ((data.passes?.[host] || 0) > now) return { ok: false, reason: "pass-active" };
+
+  const endAt = now + taskMinutes * 60 * 1000;
+  mindfulWindows[host] = {
+    ...window,
+    taskEligible: false,
+    taskUsed: true,
+    cooldownUntil: endAt + MINDFUL_WINDOW_MS
+  };
+  const passes = { ...(data.passes || {}), [host]: endAt };
+  const passStarts = { ...(data.passStarts || {}), [host]: now };
+  const passDetails = {
+    ...(data.passDetails || {}),
+    [host]: { kind: "task", startedAt: now, endAt, intention, taskMinutes }
+  };
+  const intentions = [{ text: intention, host, createdAt: now }, ...(data.intentions || [])].slice(0, 30);
+  await chrome.storage.local.set({
+    passes,
+    passStarts,
+    passDetails,
+    mindfulWindows,
+    intentions
+  });
+  try {
+    await syncPassContentScripts(passes);
+  } catch (error) {
+    delete passes[host];
+    delete passStarts[host];
+    delete passDetails[host];
+    mindfulWindows[host] = window;
+    await chrome.storage.local.set({ passes, passStarts, passDetails, mindfulWindows });
+    throw error;
+  }
+  chrome.alarms.create(`pass:${host}`, { when: endAt });
+  return { ok: true, endAt, kind: "task" };
 }
 
 async function handleMessage(message, sender) {
@@ -1465,7 +2143,16 @@ async function handleMessage(message, sender) {
   }
 
   if (
-    ["START_FOCUS", "REQUEST_FOCUS_EXIT", "CANCEL_FOCUS_EXIT", "STOP_FOCUS"].includes(
+    [
+      "START_FOCUS",
+      "REQUEST_FOCUS_EXIT",
+      "CANCEL_FOCUS_EXIT",
+      "STOP_FOCUS",
+      "GET_TAB_ORGANIZER_STATUS",
+      "ORGANIZE_TABS",
+      "UNDO_TAB_ORGANIZATION",
+      "APPLY_TAB_GROUP_NAMES"
+    ].includes(
       message.type
     ) &&
     !senderIsExtensionPage(sender, "popup.html")
@@ -1473,7 +2160,7 @@ async function handleMessage(message, sender) {
     return { ok: false, reason: "invalid-sender" };
   }
   if (
-    ["ALLOW_SITE", "CLEAR_STALE_STRICT_RULES"].includes(message.type) &&
+    ["ALLOW_SITE", "START_TASK_ACCESS", "CLEAR_STALE_STRICT_RULES"].includes(message.type) &&
     !senderIsExtensionPage(sender, "intervention.html")
   ) {
     return { ok: false, reason: "invalid-sender" };
@@ -1497,6 +2184,26 @@ async function handleMessage(message, sender) {
       protectedSites: enabledSites(data.protectedSites),
       source: "manual"
     });
+  }
+
+  if (message.type === "GET_TAB_ORGANIZER_STATUS") {
+    return tabOrganizerStatus(await tabOrganizerWindowId(sender));
+  }
+
+  if (message.type === "ORGANIZE_TABS") {
+    return organizeTabsInWindow(
+      await tabOrganizerWindowId(sender),
+      message.categoryOverrides,
+      message.tabPlans
+    );
+  }
+
+  if (message.type === "UNDO_TAB_ORGANIZATION") {
+    return undoTabOrganization(await tabOrganizerWindowId(sender));
+  }
+
+  if (message.type === "APPLY_TAB_GROUP_NAMES") {
+    return applyTabGroupNames(message.groups);
   }
 
   if (message.type === "REQUEST_FOCUS_EXIT") {
@@ -1557,6 +2264,10 @@ async function handleMessage(message, sender) {
     return allowSite(message);
   }
 
+  if (message.type === "START_TASK_ACCESS") {
+    return startTaskAccess(message);
+  }
+
   if (message.type === "PASS_EXPIRED") {
     const host = normalizeHost(message.host);
     if (!validStoredHost(host) || !senderMatchesHost(sender, host)) {
@@ -1569,6 +2280,10 @@ async function handleMessage(message, sender) {
     }
     const expired = await expirePass(host, sender.tab);
     return { ok: expired };
+  }
+
+  if (message.type === "GET_PASS_COUNTDOWN") {
+    return passCountdownContext(sender);
   }
 
   if (message.type === "CLEAR_STALE_STRICT_RULES") {

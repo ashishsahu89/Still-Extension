@@ -221,6 +221,76 @@ test("falls back to validated JSON when responseConstraint is unsupported", asyn
   assert.equal(result.suggestions[0].category, "News");
 });
 
+test("names tab groups from bounded titles and ignores unrequested model output", async () => {
+  let promptText = "";
+  let promptOptions;
+  const adapter = loadAdapter(fakeModel({
+    responses: [JSON.stringify({
+      groups: [
+        { groupId: 4, title: "Tech news" },
+        { groupId: 999, title: "Ignore this" },
+        { groupId: 4, title: "Duplicate" }
+      ]
+    })],
+    onPrompt(prompt, options) {
+      promptText = prompt;
+      promptOptions = options;
+    }
+  }));
+
+  const result = await adapter.nameTabGroups([
+    {
+      id: 4,
+      fallbackName: "Related tabs",
+      tabs: [
+        { host: "news.ycombinator.com", title: "Hacker News" },
+        { host: "arxiv.org", title: "A paper\u0000 with a control" }
+      ]
+    }
+  ], { userInitiated: true });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.suggestions)), [
+    { groupId: 4, title: "Tech news" }
+  ]);
+  assert.equal(typeof promptOptions.responseConstraint, "object");
+  assert.match(promptText, /news\.ycombinator\.com/);
+  assert.doesNotMatch(promptText, /Ignore this/);
+});
+
+test("plans only precise tab clusters and leaves unrelated tabs ungrouped", async () => {
+  let promptText = "";
+  const adapter = loadAdapter(fakeModel({
+    responses: [JSON.stringify({
+      groups: [
+        { title: "Shopping", tabIds: [1, 2, 3] },
+        { title: "Related tabs", tabIds: [4, 5] },
+        { title: "Ignore", tabIds: [999, 1] }
+      ]
+    })],
+    onPrompt(prompt) {
+      promptText = prompt;
+    }
+  }));
+
+  const result = await adapter.planTabGroups([
+    { id: 1, host: "amazon.in", title: "Amazon" },
+    { id: 2, host: "flipkart.com", title: "Flipkart" },
+    { id: 3, host: "myntra.com", title: "Myntra" },
+    { id: 4, host: "godaddy.com", title: "Domain Names" },
+    { id: 5, host: "coursera.org", title: "Online courses" }
+  ], { userInitiated: true });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.plans)), [
+    { title: "Shopping", tabIds: [1, 2, 3] }
+  ]);
+  assert.match(promptText, /same activity or workstream/);
+  assert.match(promptText, /consumer marketplaces/);
+  assert.match(promptText, /domain registrar and a shopping site/);
+  assert.match(promptText, /"title":"Amazon"/);
+});
+
 test("explains only sanitized aggregated data, trims output, and destroys its session", async () => {
   let promptText = "";
   let destroyed = 0;

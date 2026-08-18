@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pause · Still</title>
-    <link rel="stylesheet" href="ui.css?v=0.6.2" />
-    <link rel="stylesheet" href="intervention.css?v=0.6.2" />
+    <link rel="stylesheet" href="ui.css?v=0.8.0" />
+    <link rel="stylesheet" href="intervention.css?v=0.8.0" />
   </head>
   <body>
     <header class="page-header">
@@ -17,54 +17,85 @@
     </header>
 
     <main>
-      <div class="breath-stage" aria-hidden="true">
-        <span class="breath-ring ring-three"></span>
-        <span class="breath-ring ring-two"></span>
-        <span class="breath-ring ring-one"></span>
-        <span class="breath-orb"><span class="seed"></span></span>
-      </div>
-      <div class="breath-copy" role="status" aria-live="polite">
-        <span id="breath-word">Breathe in</span>
-        <strong id="countdown">8</strong>
-      </div>
+      <section id="pause-view">
+        <div class="breath-stage" aria-hidden="true">
+          <span class="breath-ring ring-three"></span>
+          <span class="breath-ring ring-two"></span>
+          <span class="breath-ring ring-one"></span>
+          <span class="breath-orb"><span class="seed"></span></span>
+        </div>
+        <div class="breath-copy" role="status" aria-live="polite">
+          <span id="breath-word">Breathe in</span>
+          <strong id="countdown">8</strong>
+        </div>
 
-      <h1 id="intervention-heading">Was this intentional?</h1>
+        <h1 id="intervention-heading">Was this intentional?</h1>
 
-      <p class="focus-reminder" id="focus-reminder" hidden>
-        You have made great progress for the last
-        <strong id="focus-elapsed"></strong>.
-        Only <strong id="focus-remaining"></strong>
-        <span id="focus-remaining-verb">remain</span>.
-      </p>
-
-      <div class="choice is-breathing">
-        <label for="intention" class="sr-only">Your intention</label>
-        <input
-          class="field"
-          id="intention"
-          maxlength="100"
-          placeholder="What did you come here to do?"
-          disabled
-        />
-        <button class="primary-button" id="return-focus">Return to focus</button>
-        <button class="continue-button" id="continue" disabled>
-          Continue to <span id="site-name">this site</span> for 5 minutes
-        </button>
-        <p class="lock-status" id="lock-status" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="5" y="10" width="14" height="10" rx="2"></rect>
-            <path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10"></path>
-          </svg>
-          <span id="lock-copy">Locked during your focus session</span>
+        <p class="focus-reminder" id="focus-reminder" hidden>
+          You have made great progress for the last
+          <strong id="focus-elapsed"></strong>.
+          Only <strong id="focus-remaining"></strong>
+          <span id="focus-remaining-verb">remain</span>.
         </p>
-      </div>
+
+        <div class="choice is-breathing">
+          <label for="intention" class="sr-only">Your intention</label>
+          <input
+            class="field"
+            id="intention"
+            maxlength="100"
+            placeholder="What did you come here to do?"
+            disabled
+          />
+          <button class="primary-button" id="return-focus">Return to focus</button>
+          <button class="continue-button" id="continue" disabled>
+            Continue to <span id="site-name">this site</span> for 5 minutes
+          </button>
+          <p class="lock-status" id="lock-status" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="5" y="10" width="14" height="10" rx="2"></rect>
+              <path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10"></path>
+            </svg>
+            <span id="lock-copy">Locked during your focus session</span>
+          </p>
+        </div>
+      </section>
+
+      <section class="expiry-view" id="expiry-view" hidden aria-live="polite">
+        <div class="expiry-stage" aria-hidden="true">
+          <span class="expiry-ring"></span>
+          <span class="expiry-orb"><span class="seed"></span></span>
+        </div>
+        <h1 id="expiry-heading">Your time is up.</h1>
+        <p class="expiry-copy" id="expiry-copy"></p>
+        <p class="expiry-focus" id="expiry-focus" hidden></p>
+        <div class="expiry-actions">
+          <button class="primary-button" id="expiry-return">Leave this site</button>
+          <button class="continue-button" id="open-task" hidden>I need this site for a task</button>
+        </div>
+        <form class="task-form" id="task-form" hidden>
+          <label for="task-intention">What do you need to accomplish?</label>
+          <input class="field" id="task-intention" maxlength="100" required />
+          <fieldset>
+            <legend>How long do you need?</legend>
+            <div class="task-durations" role="group" aria-label="Task length">
+              <button type="button" data-minutes="15" aria-pressed="true">15 min</button>
+              <button type="button" data-minutes="30" aria-pressed="false">30 min</button>
+              <button type="button" data-minutes="60" aria-pressed="false">60 min</button>
+            </div>
+          </fieldset>
+          <button class="primary-button" id="start-task" type="submit">Start a 15 minute task</button>
+          <p class="task-status" id="task-status" role="status"></p>
+        </form>
+        <p class="expiry-note" id="expiry-note"></p>
+      </section>
     </main>
 
     <footer>
       <span class="tiny-leaf" aria-hidden="true">⌁</span>
       Private by design. Everything stays on this device.
     </footer>
-    <script src="preview-runtime.js"></script>
-    <script src="intervention.js"></script>
+    <script src="preview-runtime.js?v=0.8.0"></script>
+    <script src="intervention.js?v=0.8.0"></script>
   </body>
 </html>

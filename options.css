@@ -124,6 +124,8 @@ body {
 .insight-routine button:focus-visible,
 .ai-insight-button:focus-visible,
 #prepare-chrome-ai:focus-visible,
+.ai-connection-actions button:focus-visible,
+.ai-connection-form button:focus-visible,
 .remove-site:focus-visible,
 #add-form button:focus-visible {
   outline: 2px solid var(--moss);
@@ -524,6 +526,7 @@ body {
 }
 
 .form-field > span,
+.form-field > .form-field-label,
 .form-field legend {
   display: block;
   padding: 0;
@@ -533,6 +536,12 @@ body {
 }
 
 .form-field > span small {
+  margin-left: 5px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.form-field > .form-field-label small {
   margin-left: 5px;
   color: var(--muted);
   font-weight: 400;
@@ -1219,7 +1228,6 @@ body {
   padding-top: 0;
 }
 
-.ai-settings[hidden],
 #ai-supported-settings[hidden],
 #ai-unavailable-note[hidden],
 #ai-insight-controls[hidden] {
@@ -1299,6 +1307,270 @@ body {
 .privacy-note {
   max-width: 680px;
   margin-top: 0;
+}
+
+.ai-connections-heading {
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.ai-connections-heading h3 {
+  margin-bottom: 0;
+}
+
+.ai-connections-heading p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.ai-connection-empty {
+  padding: 18px 0 2px;
+}
+
+.ai-connection-empty[hidden],
+.ai-connection-form[hidden],
+#ai-key-optional[hidden] {
+  display: none;
+}
+
+.ai-connection-empty p {
+  margin: 0 0 5px;
+  font-family: var(--serif);
+  font-size: 16px;
+}
+
+.ai-connection-empty span {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.ai-connection-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto auto;
+  min-height: 76px;
+  align-items: center;
+  gap: 13px;
+  border-bottom: 1px solid var(--row-line);
+}
+
+.ai-connection-row:last-child {
+  border-bottom: 0;
+}
+
+.ai-connection-row.active {
+  padding: 0 14px;
+  margin: 0 -14px;
+  border-radius: 9px;
+  background: var(--surface-soft);
+  box-shadow: inset 3px 0 0 var(--moss);
+}
+
+.ai-provider-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--sage);
+  color: var(--moss-dark);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+
+.ai-connection-copy {
+  min-width: 0;
+}
+
+.ai-connection-copy strong,
+.ai-connection-copy span,
+.ai-connection-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-connection-copy strong {
+  font-size: 13.5px;
+}
+
+.ai-connection-copy span {
+  margin-top: 3px;
+  color: var(--text-soft);
+  font-size: 11.5px;
+}
+
+.ai-connection-copy small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.connection-state {
+  padding: 6px 9px;
+  border: 1px solid var(--control-border-soft);
+  border-radius: 999px;
+  color: var(--moss-dark);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+.connection-state.attention {
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
+  color: var(--danger-text);
+}
+
+.ai-connection-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.ai-connection-actions button {
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10.5px;
+}
+
+.ai-connection-actions button:hover {
+  background: var(--surface-hover);
+  color: var(--moss-dark);
+}
+
+.ai-connection-form {
+  padding-top: 8px;
+}
+
+.ai-connection-form .routine-form-heading {
+  margin-bottom: 25px;
+}
+
+.ai-connection-form .routine-form-heading p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.form-field > select {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--control-border-soft);
+  border-radius: 8px;
+  background: var(--field-bg);
+  color: var(--ink);
+  outline: none;
+}
+
+.form-field > select:focus {
+  border-color: var(--moss);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.form-field > .secret-field {
+  display: flex;
+  width: 100%;
+  height: 44px;
+  align-items: center;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--control-border-soft);
+  border-radius: 8px;
+  background: var(--field-bg);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.secret-field:focus-within {
+  border-color: var(--moss);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.secret-field input {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  outline: none;
+}
+
+.secret-field button {
+  height: 30px;
+  padding: 0 11px;
+  margin-right: 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--moss-dark);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.secret-field button:hover {
+  background: var(--surface-hover);
+}
+
+.ai-connection-form .field-help {
+  display: block;
+  margin: 8px 0 0;
+  font-weight: 400;
+}
+
+.connection-privacy {
+  padding: 13px 15px;
+  margin: -4px 0 17px;
+  border-left: 3px solid var(--moss);
+  border-radius: 0 8px 8px 0;
+  background: var(--surface-soft);
+}
+
+.connection-privacy strong,
+.connection-privacy span {
+  display: block;
+}
+
+.connection-privacy strong {
+  font-size: 11.5px;
+}
+
+.connection-privacy span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.ai-connection-error {
+  margin: 0 0 4px;
+}
+
+.ai-test-status {
+  min-height: 17px;
+  margin: 0 0 10px;
+}
+
+.ai-data-note {
+  border-bottom: 0;
+}
+
+.ai-data-note p {
+  max-width: 700px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .privacy > p {
@@ -1400,6 +1672,25 @@ body {
     align-items: flex-start;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .ai-connections-heading {
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .ai-connection-row,
+  .ai-connection-row.active {
+    grid-template-columns: 38px minmax(0, 1fr) auto;
+    padding: 10px 0;
+    margin: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .ai-connection-actions {
+    grid-column: 2 / -1;
   }
 
   .routines-heading {

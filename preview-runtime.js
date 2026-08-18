@@ -1,6 +1,15 @@
 /* Local-page preview only. Chrome ignores this shim because its extension API already exists. */
 const previewParams = new URLSearchParams(location.search);
 const previewAIState = previewParams.get("ai");
+if (location.protocol.startsWith("http") && previewParams.get("connection") === "success") {
+  globalThis.StillPreviewAIConnectionFetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return { choices: [{ message: { content: "ready" } }] };
+    }
+  });
+}
 if (
   location.protocol.startsWith("http") &&
   ["light", "dark"].includes(previewParams.get("theme"))
@@ -30,6 +39,9 @@ if (
         async prompt(prompt) {
           if (String(prompt).includes('"classifications"')) {
             return JSON.stringify({ classifications: [] });
+          }
+          if (String(prompt).includes('"groupId"')) {
+            return JSON.stringify({ groups: [{ groupId: 1, title: "Tech news" }] });
           }
           return "Your active time is concentrated in a few familiar categories.";
         },
@@ -155,6 +167,8 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
     chromeAIEnabled: false,
     aiCategoryCache: {},
     aiInsightCache: {},
+    aiConnections: [],
+    activeAIConnectionId: "",
     focus: null,
     passes: {},
     passStarts: {},
@@ -193,6 +207,7 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
     routineSkips: {},
     activeRoutine: null,
     dismissedRoutineSuggestions: {},
+    tabOrganizerRemoteNamingConsent: {},
     intentions: [
       {
         text: "Watch the launch tutorial",
@@ -206,13 +221,13 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
       }
     ]
   };
-  if (previewParams.get("focus") === "true") {
+  if (["true", "regular"].includes(previewParams.get("focus"))) {
     previewState.focus = {
       startedAt: Date.now() - 7 * 60000,
       endAt: Date.now() + 18 * 60000,
       minutes: 25,
       intention: "Finish the draft",
-      strict: true,
+      strict: previewParams.get("focus") !== "regular",
       protectedSites: previewState.protectedSites
         .filter((site) => site.enabled)
         .map(({ host, label }) => ({ host, label }))
@@ -220,6 +235,14 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
   }
 
   const storageListeners = [];
+  const previewSessionState = { aiConnectionSecrets: {} };
+  const previewTabs = [
+    { id: 1, windowId: 1, index: 0, active: true, url: "https://news.ycombinator.com/", title: "Hacker News" },
+    { id: 2, windowId: 1, index: 1, url: "https://arxiv.org/abs/123", title: "A paper" },
+    { id: 3, windowId: 1, index: 2, url: "https://reddit.com/r/webdev", title: "Web development" },
+    { id: 4, windowId: 1, index: 3, url: "https://instagram.com/", title: "Instagram" }
+  ];
+  let previewUndoAvailable = false;
   const previewChrome = globalThis.chrome || {};
   Object.assign(previewChrome, {
     storage: {
@@ -238,6 +261,21 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
           for (const listener of storageListeners) listener(changes, "local");
         }
       },
+      session: {
+        async get(keys) {
+          if (typeof keys === "string") return { [keys]: previewSessionState[keys] };
+          if (!keys) return { ...previewSessionState };
+          return Object.fromEntries(keys.map((key) => [key, previewSessionState[key]]));
+        },
+        async set(values) {
+          const changes = {};
+          for (const [key, value] of Object.entries(values)) {
+            changes[key] = { oldValue: previewSessionState[key], newValue: value };
+          }
+          Object.assign(previewSessionState, values);
+          for (const listener of storageListeners) listener(changes, "session");
+        }
+      },
       onChanged: {
         addListener(listener) {
           storageListeners.push(listener);
@@ -246,6 +284,31 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
     },
     runtime: {
       async sendMessage(message) {
+        if (message.type === "GET_TAB_ORGANIZER_STATUS") {
+          return { ok: true, eligibleTabs: previewTabs.length, managedGroups: 0, undoAvailable: previewUndoAvailable };
+        }
+        if (message.type === "ORGANIZE_TABS") {
+          previewUndoAvailable = true;
+          return {
+            ok: true,
+            undoAvailable: true,
+            groups: [
+              {
+                id: 1,
+                fallbackName: "Social",
+                tabs: [
+                  { id: 3, host: "reddit.com", title: "Web development" },
+                  { id: 4, host: "instagram.com", title: "Instagram" }
+                ]
+              }
+            ]
+          };
+        }
+        if (message.type === "UNDO_TAB_ORGANIZATION") {
+          previewUndoAvailable = false;
+          return { ok: true };
+        }
+        if (message.type === "APPLY_TAB_GROUP_NAMES") return { ok: true, applied: message.groups?.map((group) => group.groupId) || [] };
         if (message.type === "START_FOCUS") {
           previewState.focus = {
             startedAt: Date.now(),
@@ -286,8 +349,13 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
             target.searchParams.set("url", "https://youtube.com/");
             target.searchParams.set("host", "youtube.com");
             target.searchParams.set("label", "YouTube");
-            target.searchParams.set("focus", "false");
-            target.searchParams.set("strict", "true");
+            target.searchParams.set("focus", previewState.focus ? "true" : "false");
+            target.searchParams.set("strict", String(previewState.focus?.strict !== false));
+            target.searchParams.set("state", message.state || "pass-expired");
+            target.searchParams.set("cooldownUntil", String(Date.now() + 25 * 60000));
+            if (message.state !== "task-expired" && !previewState.focus) {
+              target.searchParams.set("taskEligible", "true");
+            }
             location.replace(target);
           }, 0);
         }
@@ -298,8 +366,13 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
       }
     },
     tabs: {
+      async getCurrent() {
+        // A local preview has no Chrome extension tab to close.
+        return null;
+      },
+      async remove() {},
       async query() {
-        return [{ url: "https://example.com/" }];
+        return previewTabs;
       }
     }
   });
