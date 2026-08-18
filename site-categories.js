@@ -471,12 +471,25 @@
     };
   }
 
+  function topWebsites(insights, limit = 10) {
+    const safeLimit = Math.max(1, Math.min(50, Number(limit) || 10));
+    return (Array.isArray(insights?.categories) ? insights.categories : [])
+      .flatMap((category) => Array.isArray(category?.domains) ? category.domains : [])
+      .filter((domain) => domain?.host && Number(domain.seconds) > 0)
+      .sort(
+        (left, right) =>
+          right.seconds - left.seconds || left.host.localeCompare(right.host)
+      )
+      .slice(0, safeLimit);
+  }
+
   const api = Object.freeze({
     TAXONOMY,
     CURATED_HOSTS,
     normalizeHost,
     categorizeHost,
-    aggregateCategoryInsights
+    aggregateCategoryInsights,
+    topWebsites
   });
 
   root.StillSiteCategories = api;
