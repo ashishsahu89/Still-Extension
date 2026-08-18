@@ -11,6 +11,10 @@ const tabOrganizerCode = await readFile(
   new URL("../tab-organizer.js", import.meta.url),
   "utf8"
 );
+const aiConnectionsCode = await readFile(
+  new URL("../ai-connections.js", import.meta.url),
+  "utf8"
+);
 
 function extensionEvent() {
   const listeners = [];
@@ -37,7 +41,8 @@ function createHarness({
   tabs = [],
   initialNow = 1_800_000_000_000,
   initialFocusedWindowId = 1,
-  initialIdleState = "active"
+  initialIdleState = "active",
+  fetchImpl
 } = {}) {
   let now = initialNow;
   let focusedWindowId = initialFocusedWindowId;
@@ -72,7 +77,9 @@ function createHarness({
     idleStateChanged: extensionEvent()
   };
   const tabGroups = new Map();
+  const timers = new Map();
   let nextGroupId = 1;
+  let nextTimerId = 1;
 
   class FakeDate extends Date {
     constructor(...args) {
@@ -263,7 +270,7 @@ function createHarness({
     }
   };
 
-  vm.runInNewContext(`${tabOrganizerCode}\n${backgroundCode}`, {
+  vm.runInNewContext(`${tabOrganizerCode}\n${aiConnectionsCode}\n${backgroundCode}`, {
     chrome,
     Date: FakeDate,
     URL,
@@ -276,10 +283,15 @@ function createHarness({
     console: {
       error() {}
     },
-    globalThis: {},
+    globalThis: { StillPreviewAIConnectionFetch: fetchImpl },
     importScripts() {},
-    setTimeout() {
-      return 0;
+    setTimeout(callback) {
+      const timerId = nextTimerId++;
+      timers.set(timerId, callback);
+      return timerId;
+    },
+    clearTimeout(timerId) {
+      timers.delete(timerId);
     }
   });
 
@@ -319,6 +331,12 @@ function createHarness({
       return localStorageAccessLevel;
     },
     registeredScripts,
+    async runTimers() {
+      const callbacks = [...timers.values()];
+      timers.clear();
+      for (const callback of callbacks) callback();
+      await settle();
+    },
     send,
     activateTab(tabId) {
       const selected = tabState.find((tab) => tab.id === tabId);
@@ -1479,12 +1497,119 @@ test("one-click organisation groups related tabs, supports undo, and keeps a lin
   });
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, harness.tabs.find((tab) => tab.id === 2).groupId);
   assert.equal(harness.tabGroups.get(2).title, "Related tabs");
-  assert.equal(harness.tabGroups.get(2).collapsed, true);
-  assert.deepEqual(harness.tabGroupMoves[1], { groupId: 2, index: 0 });
+  assert.equal(harness.tabGroups.get(2).collapsed, false);
+  assert.deepEqual(harness.tabGroupMoves, [{ groupId: 1, index: 0 }]);
 
   harness.removeTab(2);
   await eventsCall(harness.events.tabRemoved, 2, { windowId: 1 });
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, -1);
+});
+
+test("a nested link group uses AI names as tabs are added and removed, then dissolves at one tab", async () => {
+  const responses = ["Climate policy", "Election policy", "Climate policy"];
+  const requests = [];
+  const harness = createHarness({
+    initialState: baseState({
+      aiConnections: [{
+        id: "fireworks-1",
+        provider: "compatible",
+        label: "Fireworks",
+        model: "accounts/fireworks/models/test-model",
+        endpoint: "https://api.fireworks.ai/inference/v1/chat/completions"
+      }],
+      activeAIConnectionId: "fireworks-1",
+      aiConnectionSecrets: { "fireworks-1": "test-key" }
+    }),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://example.com/climate", title: "Climate policy overview" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://news.example.org/emissions", title: "New emissions proposal" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://journal.example.net/election", title: "Election policy debate" }
+    ],
+    async fetchImpl(url, options) {
+      requests.push({ url, body: JSON.parse(options.body) });
+      const title = responses.shift();
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{
+              message: { content: JSON.stringify({ groups: [{ groupId: 1, title }] }) }
+            }]
+          };
+        }
+      };
+    }
+  });
+  await settle();
+
+  await eventsCall(harness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 2 });
+  await eventsCall(harness.events.tabUpdated, 2, { title: "New emissions proposal" }, harness.tabs.find((tab) => tab.id === 2));
+  await eventsCall(harness.events.tabUpdated, 2, { status: "complete" }, harness.tabs.find((tab) => tab.id === 2));
+  assert.equal(requests.length, 0);
+  await harness.runTimers();
+  assert.equal(harness.tabGroups.get(1).title, "Climate policy");
+  assert.equal(harness.tabGroups.get(1).collapsed, false);
+  assert.deepEqual(harness.tabGroupMoves, []);
+  await eventsCall(harness.events.tabUpdated, 2, { groupId: 1 }, harness.tabs.find((tab) => tab.id === 2));
+  await harness.runTimers();
+  assert.equal(harness.tabGroups.get(1).title, "Climate policy");
+  assert.equal(requests.length, 1);
+
+  await eventsCall(harness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 3 });
+  await harness.runTimers();
+  assert.equal(harness.tabGroups.get(1).title, "Election policy");
+
+  harness.removeTab(3);
+  await eventsCall(harness.events.tabRemoved, 3, { windowId: 1, groupId: 1 });
+  assert.equal(requests.length, 2);
+  await harness.runTimers();
+  assert.equal(harness.tabGroups.get(1).title, "Climate policy");
+  assert.equal(requests.length, 3);
+  assert.ok(requests.every((request) => request.url.includes("api.fireworks.ai")));
+  assert.ok(requests.every((request) => request.body.reasoning_effort === "none"));
+  assert.ok(requests.every((request) => !request.body.messages[0].content.includes("https://")));
+
+  harness.removeTab(2);
+  await eventsCall(harness.events.tabRemoved, 2, { windowId: 1, groupId: 1 });
+  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, -1);
+  assert.equal(requests.length, 3);
+});
+
+test("a same-site link trail keeps its local name and never calls AI", async () => {
+  let requests = 0;
+  const harness = createHarness({
+    initialState: baseState({
+      aiConnections: [{
+        id: "remote-1",
+        provider: "compatible",
+        label: "Remote model",
+        model: "test-model",
+        endpoint: "https://models.example.net/v1/chat/completions"
+      }],
+      activeAIConnectionId: "remote-1",
+      aiConnectionSecrets: { "remote-1": "test-key" }
+    }),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, groupId: -1, url: "https://example.com/news/one", title: "Story one" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://www.example.com/news/two", title: "Story two" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://example.com/news/three", title: "Story three" }
+    ],
+    async fetchImpl() {
+      requests += 1;
+      throw new Error("AI should not be called for one website");
+    }
+  });
+  await settle();
+
+  await eventsCall(harness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 2 });
+  await harness.runTimers();
+  assert.equal(harness.tabGroups.get(1).title, "Example");
+  assert.equal(requests, 0);
+
+  await eventsCall(harness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 3 });
+  await harness.runTimers();
+  assert.equal(harness.tabGroups.get(1).title, "Example");
+  assert.equal(requests, 0);
 });
 
 test("organisation uses on-device categories for unfamiliar related tabs", async () => {

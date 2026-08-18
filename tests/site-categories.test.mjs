@@ -7,7 +7,8 @@ const {
   TAXONOMY,
   normalizeHost,
   categorizeHost,
-  aggregateCategoryInsights
+  aggregateCategoryInsights,
+  topWebsites
 } = globalThis.StillSiteCategories;
 
 beforeEach(() => {
@@ -160,4 +161,23 @@ test("applies category overrides during aggregation", () => {
   assert.equal(result.categories[0].category, "Productivity");
   assert.equal(result.categories[0].seconds, 90);
   assert.equal(result.categories[0].visits, 2);
+});
+
+test("returns only the ten most-used websites across categories", () => {
+  const usageStats = Object.fromEntries(
+    Array.from({ length: 12 }, (_, index) => [
+      `site-${String(index).padStart(2, "0")}.example`,
+      { usageSeconds: (index + 1) * 60 }
+    ])
+  );
+  const insights = aggregateCategoryInsights({ usageStats });
+  const websites = topWebsites(insights);
+
+  assert.equal(websites.length, 10);
+  assert.equal(websites[0].host, "site-11.example");
+  assert.equal(websites[0].seconds, 720);
+  assert.equal(websites.at(-1).host, "site-02.example");
+  assert.ok(websites.every((website, index) =>
+    index === 0 || websites[index - 1].seconds >= website.seconds
+  ));
 });

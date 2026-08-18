@@ -29,6 +29,7 @@
   --control-off: #c9cdc6;
   --control-knob: #fff;
   --button-disabled: #9cac9c;
+  --secondary-button-surface: #fff;
   --focus-ring: rgba(73, 106, 81, 0.12);
   --control-shadow: rgba(32, 35, 31, 0.24);
   --track: #e2e5de;
@@ -86,6 +87,7 @@
     --control-off: #4a514b;
     --control-knob: #edf0eb;
     --button-disabled: #536257;
+    --secondary-button-surface: #202720;
     --focus-ring: rgba(134, 169, 141, 0.22);
     --control-shadow: rgba(0, 0, 0, 0.38);
     --track: #2a312b;
@@ -141,6 +143,7 @@
   --control-off: #4a514b;
   --control-knob: #edf0eb;
   --button-disabled: #536257;
+  --secondary-button-surface: #202720;
   --focus-ring: rgba(134, 169, 141, 0.22);
   --control-shadow: rgba(0, 0, 0, 0.38);
   --track: #2a312b;
@@ -195,6 +198,7 @@
   --control-off: #c9cdc6;
   --control-knob: #fff;
   --button-disabled: #9cac9c;
+  --secondary-button-surface: #fff;
   --focus-ring: rgba(73, 106, 81, 0.12);
   --control-shadow: rgba(32, 35, 31, 0.24);
   --track: #e2e5de;
