@@ -394,6 +394,7 @@ function baseState(overrides = {}) {
     usageEvents: [],
     usageTracker: null,
     usageTrackingEnabled: true,
+    linkTrailGroupingEnabled: true,
     impulseEvents: [],
     focusSessions: [],
     intentions: [],
@@ -1503,6 +1504,26 @@ test("one-click organisation groups related tabs, supports undo, and keeps a lin
   harness.removeTab(2);
   await eventsCall(harness.events.tabRemoved, 2, { windowId: 1 });
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, -1);
+});
+
+test("disabled link-trail grouping leaves newly opened tabs in place", async () => {
+  const harness = createHarness({
+    initialState: baseState({ linkTrailGroupingEnabled: false }),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, groupId: -1, url: "https://example.com/", title: "Example" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://example.org/story", title: "Story" }
+    ]
+  });
+  await settle();
+
+  await eventsCall(harness.events.createdNavigationTarget, {
+    sourceTabId: 1,
+    tabId: 2
+  });
+
+  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, -1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 2).groupId, -1);
+  assert.equal(harness.tabGroups.size, 0);
 });
 
 test("a nested link group uses AI names as tabs are added and removed, then dissolves at one tab", async () => {

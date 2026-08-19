@@ -25,6 +25,7 @@ const DEFAULTS = {
   usageEvents: [],
   usageTracker: null,
   usageTrackingEnabled: true,
+  linkTrailGroupingEnabled: true,
   chromeAIEnabled: false,
   aiCategoryCache: {},
   aiInsightCache: {},
@@ -1806,6 +1807,10 @@ async function undoTabOrganization(windowId) {
 async function addChildTabToSourceGroup(details) {
   if (!Number.isInteger(details?.sourceTabId) || !Number.isInteger(details?.tabId)) return;
   if (!chrome.tabs.group || !chrome.tabGroups?.update) return;
+  const { linkTrailGroupingEnabled = true } = await chrome.storage.local.get(
+    "linkTrailGroupingEnabled"
+  );
+  if (linkTrailGroupingEnabled === false) return;
   const [source, target] = await Promise.all([
     chrome.tabs.get(details.sourceTabId),
     chrome.tabs.get(details.tabId)

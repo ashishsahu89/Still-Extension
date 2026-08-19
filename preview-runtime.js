@@ -164,6 +164,7 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
     strictFocus: true,
     pauseSeconds: 8,
     usageTrackingEnabled: true,
+    linkTrailGroupingEnabled: true,
     chromeAIEnabled: false,
     aiCategoryCache: {},
     aiInsightCache: {},

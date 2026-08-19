@@ -33,11 +33,25 @@ In regular (non-strict) focus, Still allows one shared five-minute break across 
 
 When focus begins, Still also redirects protected sites that were already open and watches single-page-app history changes such as YouTube navigation.
 
+## Tab organization
+
+The popup includes a one-click **Organise tabs** action. Still groups related tabs, collapses the groups it creates in bulk, moves those groups to the left, and offers an undo action. It combines conservative local rules with the active external model or Chrome's on-device model when either is enabled, then falls back safely when a model is unavailable or returns an unusable plan.
+
+Still can also keep link trails together while you browse. When a link opens in a new tab, the new tab stays beside its source tab in an open group rather than being moved away from the work in progress. These link-trail groups:
+
+- stay open while they are in use
+- keep their natural tab-strip position
+- dissolve when only one tab remains
+- use a local website name without AI when every tab is from the same site
+- can be renamed by an active connected model as their shared topic changes
+
+Automatic link-trail grouping is enabled by default and can be turned off under **AI → Tab organization** when the browser already provides a similar feature. This setting does not disable the one-click **Organise tabs** action.
+
 ## Settings and insights
 
 Settings now open into a small navigation system:
 
-- **Insights:** Day, week, and month views for focused time, sessions, impulses, active-tab categories, leading sites, distraction timing, and protected-site activity
+- **Insights:** Day, week, and month views for focused time, sessions, impulses, active-tab categories, the ten most-used websites, distraction timing, and protected-site activity
 - **Protection:** Focus behavior, strictness, pause length, and the protected-site list
 - **Routines:** Recurring protection windows with chosen days, times, sites, mode, topic, and ask-first or automatic start
 - **AI:** Browser-provided intelligence plus direct connections to OpenAI, Ollama, LM Studio, or another OpenAI-compatible endpoint
@@ -45,9 +59,13 @@ Settings now open into a small navigation system:
 
 Routines notify you five minutes before they begin with **Start now** and **Skip today**. They never replace an active focus session, and opening the browser partway through an automatic routine starts only the remaining scheduled time. Protected-site usage reflects intentional-access time granted through Still’s five-minute passes.
 
-Still’s category insights measure only the domain in the active tab of the browser’s focused window. Measurement pauses when the browser loses focus, the user is idle, or the setting is turned off. Still never records page paths, titles, or content. Daily domain totals are retained for up to 550 days; bounded domain-only occurrences are retained for up to 90 days so time-of-day patterns can be calculated.
+Still’s category insights measure only the domain in the active tab of the browser’s focused window. Measurement pauses when the browser loses focus, the user is idle, or the setting is turned off. The category/website switch changes between category totals and the ten websites with the most active usage. Still never records page paths, page titles, or page content as browsing history. Daily domain totals are retained for up to 550 days; bounded domain-only occurrences are retained for up to 90 days so time-of-day patterns can be calculated.
 
-Categories work without AI through a bundled taxonomy and conservative hostname rules. The AI page checks for a compatible browser-provided Prompt API and also lets users connect OpenAI, Ollama, LM Studio, or another OpenAI-compatible Chat Completions endpoint. A saved external connection can be disabled and enabled again without removing its settings or key. Connection metadata and API keys are stored only in Still’s local extension storage on that device, restricted to trusted Still contexts. Chrome extension storage is not encrypted by Still; users who need a key to disappear on browser restart can remove the model connection. Local endpoints stay on the device; requests to a remote model go directly from the extension to that provider and follow its privacy and billing terms. Still has no relay server and never receives the key or request.
+Categories work without AI through a bundled taxonomy and conservative hostname rules. When Insights needs unfamiliar sites categorized, Still tries the active external model first, Chrome's on-device model second, and its bundled defaults last. Learned categories are remembered locally. The reset control clears them and requests fresh categories for websites visited during the previous seven days. Category requests are batched, and only confident, valid suggestions from Still's fixed taxonomy are saved.
+
+The AI page checks for a compatible browser-provided Prompt API and also lets users connect OpenAI, Ollama, LM Studio, or another OpenAI-compatible Chat Completions endpoint. A saved external connection can be disabled and enabled again without removing its settings or key. Connection metadata and API keys are stored only in Still’s local extension storage on that device, restricted to trusted Still contexts. Chrome extension storage is not encrypted by Still; users who need a key to disappear on browser restart can remove the model connection.
+
+Local endpoints and Chrome's built-in model stay on the device. When a remote model is enabled, tab organization may send tab titles and domains, while category Insights may send aggregated domains, active time, visit counts, and time-of-day totals. Full page addresses and page contents are never included. Requests go directly from the extension to the selected provider and follow that provider's privacy and billing terms. Still has no relay server and never receives the key or request.
 
 After enough local activity, Still can suggest a routine for a repeated distraction window. Suggestions use a transparent 28-day calculation based on impulse frequency, consistency across active days, recency, existing routines, and successful focus sessions in the same window. The suggestion appears in Routines and alongside **When distraction shows up** in Insights. Still never creates the routine automatically: **Review routine** opens a pre-filled form, while **Not now** pauses suggestions for two weeks.
 
@@ -58,4 +76,4 @@ After enough local activity, Still can suggest a routine for a repeated distract
 - `idle`: pauses active-tab measurement when the computer is not in use
 - `alarms`: completes focus timers reliably while the popup is closed
 - `notifications`: gives routine reminders and the Start now / Skip today actions
-- `<all_urls>`: required to support any domain you add; Still never sends browsing data anywhere
+- `<all_urls>`: supports any protected domain and lets Still organize ordinary web tabs; Still has no server, and remote-model requests are sent only to a provider the user explicitly connects and enables

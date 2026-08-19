@@ -1813,6 +1813,7 @@ async function render() {
     "strictFocus",
     "pauseSeconds",
     "usageTrackingEnabled",
+    "linkTrailGroupingEnabled",
     "protectedSites",
     "stats",
     "siteStats",
@@ -1858,6 +1859,8 @@ async function render() {
   $("#pause-seconds").value = String(insightsData.pauseSeconds || 8);
   $("#usage-tracking-enabled").checked =
     insightsData.usageTrackingEnabled !== false;
+  $("#link-trail-grouping-enabled").checked =
+    insightsData.linkTrailGroupingEnabled !== false;
   $("#chrome-ai-enabled").checked = insightsData.chromeAIEnabled === true;
   renderSites(insightsData.protectedSites || []);
   renderRoutineSuggestion();
@@ -1880,6 +1883,10 @@ $("#pause-seconds").addEventListener("change", (event) =>
 $("#usage-tracking-enabled").addEventListener("change", (event) => {
   insightsData.usageTrackingEnabled = event.target.checked;
   saveSetting("usageTrackingEnabled", event.target.checked);
+});
+$("#link-trail-grouping-enabled").addEventListener("change", (event) => {
+  insightsData.linkTrailGroupingEnabled = event.target.checked;
+  saveSetting("linkTrailGroupingEnabled", event.target.checked);
 });
 $("#chrome-ai-enabled").addEventListener("change", async (event) => {
   insightsData.chromeAIEnabled = event.target.checked;
