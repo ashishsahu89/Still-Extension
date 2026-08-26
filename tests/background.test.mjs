@@ -1483,7 +1483,7 @@ test("one-click organisation groups related tabs, supports undo, and keeps a lin
   assert.equal(organised.ok, true);
   assert.equal(organised.groups.length, 1);
   assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, harness.tabs.find((tab) => tab.id === 4).groupId);
-  assert.equal(harness.tabGroups.get(1).title, "Social");
+  assert.equal(harness.tabGroups.get(1).title, "Reddit");
   assert.equal(harness.tabGroups.get(1).collapsed, true);
   assert.deepEqual(harness.tabGroupMoves[0], { groupId: 1, index: 0 });
 
@@ -1497,9 +1497,12 @@ test("one-click organisation groups related tabs, supports undo, and keeps a lin
     tabId: 2
   });
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, harness.tabs.find((tab) => tab.id === 2).groupId);
-  assert.equal(harness.tabGroups.get(2).title, "Related tabs");
-  assert.equal(harness.tabGroups.get(2).collapsed, false);
-  assert.deepEqual(harness.tabGroupMoves, [{ groupId: 1, index: 0 }]);
+  assert.equal(harness.tabGroups.get(2).title, "From News");
+  assert.equal(harness.tabGroups.get(2).collapsed, true);
+  assert.deepEqual(harness.tabGroupMoves, [
+    { groupId: 1, index: 0 },
+    { groupId: 2, index: 0 }
+  ]);
 
   harness.removeTab(2);
   await eventsCall(harness.events.tabRemoved, 2, { windowId: 1 });
@@ -1569,8 +1572,8 @@ test("a nested link group uses AI names as tabs are added and removed, then diss
   assert.equal(requests.length, 0);
   await harness.runTimers();
   assert.equal(harness.tabGroups.get(1).title, "Climate policy");
-  assert.equal(harness.tabGroups.get(1).collapsed, false);
-  assert.deepEqual(harness.tabGroupMoves, []);
+  assert.equal(harness.tabGroups.get(1).collapsed, true);
+  assert.deepEqual(harness.tabGroupMoves, [{ groupId: 1, index: 0 }]);
   await eventsCall(harness.events.tabUpdated, 2, { groupId: 1 }, harness.tabs.find((tab) => tab.id === 2));
   await harness.runTimers();
   assert.equal(harness.tabGroups.get(1).title, "Climate policy");
@@ -1631,6 +1634,34 @@ test("a same-site link trail keeps its local name and never calls AI", async () 
   await harness.runTimers();
   assert.equal(harness.tabGroups.get(1).title, "Example");
   assert.equal(requests, 0);
+});
+
+test("local linked-tab names use the source for every mixed-site group", async () => {
+  const sourceTabs = [
+    { id: 1, windowId: 1, index: 0, groupId: -1, url: "https://github.com/still/focus", title: "Still focus" },
+    { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://example.org/notes", title: "Notes" }
+  ];
+  const mixedHarness = createHarness({ initialState: baseState(), tabs: sourceTabs });
+  await settle();
+
+  await eventsCall(mixedHarness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 2 });
+  await mixedHarness.runTimers();
+  assert.equal(mixedHarness.tabGroups.get(1).title, "From GitHub");
+  assert.equal(mixedHarness.tabGroups.get(1).collapsed, true);
+  assert.deepEqual(mixedHarness.tabGroupMoves, [{ groupId: 1, index: 0 }]);
+
+  const workHarness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, groupId: -1, url: "https://github.com/still/focus", title: "Still focus" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://linear.app/still/issue-1", title: "Still issue" }
+    ]
+  });
+  await settle();
+
+  await eventsCall(workHarness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 2 });
+  await workHarness.runTimers();
+  assert.equal(workHarness.tabGroups.get(1).title, "From GitHub");
 });
 
 test("organisation uses on-device categories for unfamiliar related tabs", async () => {

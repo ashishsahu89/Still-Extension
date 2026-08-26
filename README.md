@@ -37,15 +37,13 @@ When focus begins, Still also redirects protected sites that were already open a
 
 The popup includes a one-click **Organise tabs** action. Still groups related tabs, collapses the groups it creates in bulk, moves those groups to the left, and offers an undo action. It combines conservative local rules with the active external model or Chrome's on-device model when either is enabled, then falls back safely when a model is unavailable or returns an unusable plan.
 
-Still can also keep link trails together while you browse. When a link opens in a new tab, the new tab stays beside its source tab in an open group rather than being moved away from the work in progress. These link-trail groups:
+Still can also keep linked tabs together while you browse. When a link opens in a new tab, Still creates a collapsed group at the left of the tab strip. These groups:
 
-- stay open while they are in use
-- keep their natural tab-strip position
 - dissolve when only one tab remains
-- use a local website name without AI when every tab is from the same site
+- use a local website name when every tab is from the same site, or `From <source website>` for a mixed set
 - can be renamed by an active connected model as their shared topic changes
 
-Automatic link-trail grouping is enabled by default and can be turned off under **AI → Tab organization** when the browser already provides a similar feature. This setting does not disable the one-click **Organise tabs** action.
+Keeping linked tabs together is enabled by default and can be turned off under **AI → Tab organization** when the browser already provides a similar feature. This setting does not disable the one-click **Organise tabs** action.
 
 ## Settings and insights
 

@@ -1,6 +1,6 @@
 # Still — Project State
 
-Last updated: 2026-08-14
+Last updated: 2026-08-26
 
 This is the durable handoff for the project. Update it whenever a feature, product decision, test result, branch, or important open issue changes. Never put API keys or other secrets in this file.
 
@@ -85,7 +85,7 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 - AI connection settings for OpenAI-compatible APIs, Ollama, LM Studio, and browser-provided on-device intelligence.
 - One-click tab grouping through Chrome tab groups.
 - Newly created tab groups start collapsed and are moved to the left, while preserving their relative order.
-- Parent/child link-trail grouping.
+- Parent/child linked-tab grouping.
 - Automatic removal of a managed group when only one tab remains.
 - Dynamic automatic group naming as group membership changes.
 - External AI is preferred over Chrome built-in AI when a valid custom connection is active.
@@ -107,6 +107,7 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 - Observe opener/child tab relationships.
 - Keep a newly opened child with its parent workstream.
 - Create, update, collapse/expand, and remove Chrome tab groups.
+- Name local groups by website when every tab is from one site. For linked tabs across sites, name the group `From <source website>`; broad category names are reserved for bulk organization.
 - Validate model output against the current window.
 - Reject invented IDs, duplicate ownership, one-tab groups, unsafe titles, and catch-all titles such as `Related tabs`, `Misc`, `Other`, or `General`.
 - Fall back to a small local domain taxonomy only when no usable AI plan reaches the organiser.
@@ -149,7 +150,7 @@ node --test --test-reporter=dot tests/*.test.mjs
 git diff --check
 ```
 
-The wider syntax/test run for the affected AI, background, options, popup, pass-countdown, and organiser files also passed. The current suite contains 70 automated checks.
+The wider syntax/test run for the affected AI, background, options, popup, pass-countdown, and organiser files also passed. The current suite contains 75 automated checks.
 
 ### Real Chrome testing
 

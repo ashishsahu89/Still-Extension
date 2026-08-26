@@ -16,7 +16,7 @@
     { name: "Social", pattern: /(^|\.)(reddit|x|twitter|facebook|instagram|linkedin|tiktok)\.com$/ },
     { name: "Video", pattern: /(^|\.)(youtube|vimeo|netflix|twitch)\.com$/ },
     { name: "News", pattern: /(^|\.)(news\.ycombinator|nytimes|theguardian|bbc|cnn|reuters|medium|substack)\./ },
-    { name: "Work", pattern: /(^|\.)(github|gitlab|figma|linear|notion|slack|docs\.google|drive\.google|calendar\.google)\.com$/ },
+    { name: "Work", pattern: /(^|\.)(github|gitlab|figma|notion|slack)\.com$|(^|\.)linear\.app$|(^|\.)(docs|drive|calendar)\.google\.com$/ },
     { name: "Research", pattern: /(^|\.)(wikipedia|arxiv|scholar\.google|stackoverflow|developer\.mozilla|developer\.chrome)\./ },
     { name: "Learning", pattern: /(^|\.)(coursera|udemy|edx|khanacademy|codecademy|freecodecamp)\./ },
     { name: "Shopping", pattern: /(^|\.)(amazon|ebay|etsy|flipkart|walmart|target|bestbuy|aliexpress|myntra|meesho|ikea)\./ }
@@ -56,6 +56,16 @@
   }
 
   function labelForHost(host) {
+    const normalized = normalizedHost(host);
+    const knownLabels = {
+      "github.com": "GitHub",
+      "gitlab.com": "GitLab",
+      "linkedin.com": "LinkedIn",
+      "stackoverflow.com": "Stack Overflow",
+      "youtube.com": "YouTube",
+      "x.com": "X"
+    };
+    if (knownLabels[normalized]) return knownLabels[normalized];
     const root = String(host || "").split(".")[0].replace(/[-_]/g, " ");
     return root ? root.charAt(0).toUpperCase() + root.slice(1) : "Related tabs";
   }
@@ -86,6 +96,7 @@
   function nameForTabs(tabs, categoryOverrides = {}) {
     const safeTabs = normalizedTabs(tabs);
     const hosts = [...new Set(safeTabs.map((tab) => tab.host))];
+    if (hosts.length === 1) return labelForHost(hosts[0]);
     const categories = safeTabs
       .map((tab) => categoryForHost(tab.host, categoryOverrides))
       .filter(Boolean);
@@ -94,8 +105,16 @@
       ? categories[0]
       : "";
     if (category) return category;
-    if (hosts.length === 1) return labelForHost(hosts[0]);
     return "Related tabs";
+  }
+
+  function nameForLinkedTabs(tabs, sourceHost = "") {
+    const safeTabs = normalizedTabs(tabs);
+    const hosts = [...new Set(safeTabs.map((tab) => tab.host))];
+    if (hosts.length === 1) return labelForHost(hosts[0]);
+
+    const source = hostFromUrl(sourceHost) || normalizedHost(sourceHost);
+    return source ? `From ${labelForHost(source)}` : "Related tabs";
   }
 
   function colorForName(name) {
@@ -183,6 +202,7 @@
     groupPayload,
     hostFromUrl,
     isOrganizable,
+    nameForLinkedTabs,
     nameForTabs,
     normalizedTabs,
     plansForExplicitGroups,

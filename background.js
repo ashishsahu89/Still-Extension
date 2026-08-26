@@ -1424,6 +1424,8 @@ function normalizedTabOrganizerState(value = {}) {
     managedGroups[groupId] = {
       windowId: Number.isInteger(rawGroup.windowId) ? rawGroup.windowId : 0,
       kind: rawGroup.kind === "linkTrail" ? "linkTrail" : "bulk",
+      sourceHost: globalThis.StillTabOrganizer.hostFromUrl(rawGroup.sourceHost) ||
+        String(rawGroup.sourceHost || "").replace(/^www\./, "").toLowerCase(),
       autoName: safeText(rawGroup.autoName, 60) || "Related tabs",
       semanticName: safeText(rawGroup.semanticName, 60),
       aiNameFingerprint: safeText(rawGroup.aiNameFingerprint, 80),
@@ -1659,7 +1661,9 @@ async function applyAutoGroupName(groupId, { allowAI = true } = {}) {
   }
   if (metadata.manualName) return null;
   const fingerprint = tabGroupContentFingerprint(tabs);
-  const localTitle = globalThis.StillTabOrganizer.nameForTabs(tabs);
+  const localTitle = metadata.kind === "linkTrail"
+    ? globalThis.StillTabOrganizer.nameForLinkedTabs(tabs, metadata.sourceHost)
+    : globalThis.StillTabOrganizer.nameForTabs(tabs);
   let title = localTitle;
   if (
     metadata.kind === "linkTrail" &&
@@ -1827,13 +1831,19 @@ async function addChildTabToSourceGroup(details) {
   const state = await getTabOrganizerState();
   let groupId = source.groupId;
   if (!Number.isInteger(groupId) || groupId === TAB_GROUP_NONE) {
-    const title = globalThis.StillTabOrganizer.nameForTabs([source, navigatedTarget]);
+    const sourceHost = globalThis.StillTabOrganizer.hostFromUrl(source.url || source.pendingUrl || "");
+    const title = globalThis.StillTabOrganizer.nameForLinkedTabs(
+      [source, navigatedTarget],
+      sourceHost
+    );
     const color = globalThis.StillTabOrganizer.colorForName(title);
     groupId = await chrome.tabs.group({ tabIds: [source.id, navigatedTarget.id] });
-    await safeTabGroupUpdate(groupId, { title, color, collapsed: false });
+    await safeTabGroupUpdate(groupId, { title, color, collapsed: true });
+    await safeTabGroupMove(groupId, 0);
     state.managedGroups[groupId] = {
       windowId: source.windowId,
       kind: "linkTrail",
+      sourceHost,
       autoName: title,
       manualName: false,
       color,
