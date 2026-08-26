@@ -84,7 +84,7 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 - Automatic system light/dark mode.
 - AI connection settings for OpenAI-compatible APIs, Ollama, LM Studio, and browser-provided on-device intelligence.
 - One-click tab grouping through Chrome tab groups.
-- Newly created tab groups start collapsed and are moved to the left, while preserving their relative order.
+- Bulk-organized tab groups start collapsed and are appended after existing groups, while preserving their relative order. Linked-tab groups stay open beside their source tab.
 - Parent/child linked-tab grouping.
 - Automatic removal of a managed group when only one tab remains.
 - Dynamic automatic group naming as group membership changes.
@@ -107,7 +107,9 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 - Observe opener/child tab relationships.
 - Keep a newly opened child with its parent workstream.
 - Create, update, collapse/expand, and remove Chrome tab groups.
-- Name local groups by website when every tab is from one site. For linked tabs across sites, name the group `From <source website>`; broad category names are reserved for bulk organization.
+- Name local groups by website when every tab is from one site. Locally named linked-tab groups use `🔗 <source website>`; broad category names are reserved for bulk organization.
+- For bulk organization, cross-site local categories are limited to Social, Video, News, and Shopping. Work, Research, and Learning are insight classifications, not local cross-site buckets; a model must name a specific workstream rather than `Work`, `Research`, or `Learning`.
+- On otherwise unclassified websites, a standalone `news` word in a tab title is a local signal for the News grouping category.
 - Validate model output against the current window.
 - Reject invented IDs, duplicate ownership, one-tab groups, unsafe titles, and catch-all titles such as `Related tabs`, `Misc`, `Other`, or `General`.
 - Fall back to a small local domain taxonomy only when no usable AI plan reaches the organiser.
@@ -150,7 +152,7 @@ node --test --test-reporter=dot tests/*.test.mjs
 git diff --check
 ```
 
-The wider syntax/test run for the affected AI, background, options, popup, pass-countdown, and organiser files also passed. The current suite contains 75 automated checks.
+The wider syntax/test run for the affected AI, background, options, popup, pass-countdown, and organiser files also passed. The current suite contains 77 automated checks.
 
 ### Real Chrome testing
 

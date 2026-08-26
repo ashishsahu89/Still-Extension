@@ -35,12 +35,12 @@ When focus begins, Still also redirects protected sites that were already open a
 
 ## Tab organization
 
-The popup includes a one-click **Organise tabs** action. Still groups related tabs, collapses the groups it creates in bulk, moves those groups to the left, and offers an undo action. It combines conservative local rules with the active external model or Chrome's on-device model when either is enabled, then falls back safely when a model is unavailable or returns an unusable plan.
+The popup includes a one-click **Organise tabs** action. Still groups repeated websites and distinct cross-site categories such as Social, Shopping, Video, and News; an otherwise unclassified tab with a standalone `news` word in its title also qualifies for News. It avoids collapsing broad Work, Research, or Learning sets into one generic group. New bulk groups start collapsed at the end of the tab strip and offer an undo action. Still combines these conservative local rules with the active external model or Chrome's on-device model, which must provide a specific workstream rather than a generic title such as Work.
 
-Still can also keep linked tabs together while you browse. When a link opens in a new tab, Still creates a collapsed group at the left of the tab strip. These groups:
+Still can also keep linked tabs together while you browse. When a link opens in a new tab, Still creates an open group beside its source tab so the browsing flow remains visible. These groups:
 
 - dissolve when only one tab remains
-- use a local website name when every tab is from the same site, or `From <source website>` for a mixed set
+- use `🔗 <source website>` for locally named linked-tab groups, including when every tab is from the same site
 - can be renamed by an active connected model as their shared topic changes
 
 Keeping linked tabs together is enabled by default and can be turned off under **AI → Tab organization** when the browser already provides a similar feature. This setting does not disable the one-click **Organise tabs** action.

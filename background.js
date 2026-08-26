@@ -1776,10 +1776,10 @@ async function organizeTabsInWindow(windowId, categoryOverrides = {}, tabPlans =
     };
     created.push({ groupId, tabIds: plan.tabs.map((tab) => tab.id) });
   }
-  // Moving from rightmost to leftmost preserves the plans' original visual
-  // order while placing the complete set of newly created groups at the left.
-  for (const { groupId } of [...created].reverse()) {
-    await safeTabGroupMove(groupId, 0);
+  // Appending each group in plan order preserves their visual order and avoids
+  // disturbing groups the user already placed at the beginning of the strip.
+  for (const { groupId } of created) {
+    await safeTabGroupMove(groupId, -1);
   }
   state.undoByWindow[windowId] = { groups: created, createdAt: Date.now() };
   await saveTabOrganizerState(state);
@@ -1838,8 +1838,7 @@ async function addChildTabToSourceGroup(details) {
     );
     const color = globalThis.StillTabOrganizer.colorForName(title);
     groupId = await chrome.tabs.group({ tabIds: [source.id, navigatedTarget.id] });
-    await safeTabGroupUpdate(groupId, { title, color, collapsed: true });
-    await safeTabGroupMove(groupId, 0);
+    await safeTabGroupUpdate(groupId, { title, color, collapsed: false });
     state.managedGroups[groupId] = {
       windowId: source.windowId,
       kind: "linkTrail",

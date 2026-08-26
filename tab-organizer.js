@@ -23,6 +23,9 @@
   ]);
 
   const CATCH_ALL_GROUP_TITLE = /^(related tabs?|misc|other|general)$/i;
+  const GENERIC_WORKSTREAM_TITLE = /^(work|research|learning)$/i;
+  const CROSS_SITE_CATEGORY_NAMES = new Set(["Social", "Video", "News", "Shopping"]);
+  const LINKED_TAB_PREFIX = "🔗 ";
 
   // Chrome's built-in model uses a broader taxonomy than the local rules. Keep
   // its values bounded and translate the one long label into a compact group name.
@@ -76,6 +79,12 @@
     return CATEGORY_RULES.find((rule) => rule.pattern.test(host))?.name || "";
   }
 
+  function categoryForTab(tab, categoryOverrides = {}) {
+    const hostCategory = categoryForHost(tab.host, categoryOverrides);
+    if (hostCategory) return hostCategory;
+    return /\bnews\b/i.test(String(tab.title || "")) ? "News" : "";
+  }
+
   function isOrganizable(tab) {
     return Boolean(Number.isInteger(tab?.id) && !tab.pinned && (hostFromUrl(tab.url) || normalizedHost(tab.host)));
   }
@@ -98,7 +107,7 @@
     const hosts = [...new Set(safeTabs.map((tab) => tab.host))];
     if (hosts.length === 1) return labelForHost(hosts[0]);
     const categories = safeTabs
-      .map((tab) => categoryForHost(tab.host, categoryOverrides))
+      .map((tab) => categoryForTab(tab, categoryOverrides))
       .filter(Boolean);
     const category = categories.length === safeTabs.length && categories[0] &&
       categories.every((value) => value === categories[0])
@@ -111,10 +120,10 @@
   function nameForLinkedTabs(tabs, sourceHost = "") {
     const safeTabs = normalizedTabs(tabs);
     const hosts = [...new Set(safeTabs.map((tab) => tab.host))];
-    if (hosts.length === 1) return labelForHost(hosts[0]);
+    if (hosts.length === 1) return `${LINKED_TAB_PREFIX}${labelForHost(hosts[0])}`;
 
     const source = hostFromUrl(sourceHost) || normalizedHost(sourceHost);
-    return source ? `From ${labelForHost(source)}` : "Related tabs";
+    return source ? `${LINKED_TAB_PREFIX}${labelForHost(source)}` : "Related tabs";
   }
 
   function colorForName(name) {
@@ -129,8 +138,10 @@
     const candidates = normalizedTabs(tabs).filter((tab) => tab.groupId === TAB_GROUP_NONE);
     const buckets = new Map();
     for (const tab of candidates) {
-      const category = categoryForHost(tab.host, categoryOverrides);
-      const key = category ? `category:${category}` : `host:${tab.host}`;
+      const category = categoryForTab(tab, categoryOverrides);
+      const key = CROSS_SITE_CATEGORY_NAMES.has(category)
+        ? `category:${category}`
+        : `host:${tab.host}`;
       const items = buckets.get(key) || [];
       items.push(tab);
       buckets.set(key, items);
@@ -155,7 +166,7 @@
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 60);
-    return CATCH_ALL_GROUP_TITLE.test(title) ? "" : title;
+    return CATCH_ALL_GROUP_TITLE.test(title) || GENERIC_WORKSTREAM_TITLE.test(title) ? "" : title;
   }
 
   // Accept a model's proposed clusters only after resolving every tab id against
