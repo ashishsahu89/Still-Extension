@@ -16,13 +16,16 @@
     { name: "Social", pattern: /(^|\.)(reddit|x|twitter|facebook|instagram|linkedin|tiktok)\.com$/ },
     { name: "Video", pattern: /(^|\.)(youtube|vimeo|netflix|twitch)\.com$/ },
     { name: "News", pattern: /(^|\.)(news\.ycombinator|nytimes|theguardian|bbc|cnn|reuters|medium|substack)\./ },
-    { name: "Work", pattern: /(^|\.)(github|gitlab|figma|linear|notion|slack|docs\.google|drive\.google|calendar\.google)\.com$/ },
+    { name: "Work", pattern: /(^|\.)(github|gitlab|figma|notion|slack)\.com$|(^|\.)linear\.app$|(^|\.)(docs|drive|calendar)\.google\.com$/ },
     { name: "Research", pattern: /(^|\.)(wikipedia|arxiv|scholar\.google|stackoverflow|developer\.mozilla|developer\.chrome)\./ },
     { name: "Learning", pattern: /(^|\.)(coursera|udemy|edx|khanacademy|codecademy|freecodecamp)\./ },
     { name: "Shopping", pattern: /(^|\.)(amazon|ebay|etsy|flipkart|walmart|target|bestbuy|aliexpress|myntra|meesho|ikea)\./ }
   ]);
 
   const CATCH_ALL_GROUP_TITLE = /^(related tabs?|misc|other|general)$/i;
+  const GENERIC_WORKSTREAM_TITLE = /^(work|research|learning)$/i;
+  const CROSS_SITE_CATEGORY_NAMES = new Set(["Social", "Video", "News", "Shopping"]);
+  const LINKED_TAB_PREFIX = "🔗 ";
 
   // Chrome's built-in model uses a broader taxonomy than the local rules. Keep
   // its values bounded and translate the one long label into a compact group name.
@@ -56,6 +59,16 @@
   }
 
   function labelForHost(host) {
+    const normalized = normalizedHost(host);
+    const knownLabels = {
+      "github.com": "GitHub",
+      "gitlab.com": "GitLab",
+      "linkedin.com": "LinkedIn",
+      "stackoverflow.com": "Stack Overflow",
+      "youtube.com": "YouTube",
+      "x.com": "X"
+    };
+    if (knownLabels[normalized]) return knownLabels[normalized];
     const root = String(host || "").split(".")[0].replace(/[-_]/g, " ");
     return root ? root.charAt(0).toUpperCase() + root.slice(1) : "Related tabs";
   }
@@ -64,6 +77,12 @@
     const override = AI_CATEGORY_NAMES[categoryOverrides?.[host]];
     if (override) return override;
     return CATEGORY_RULES.find((rule) => rule.pattern.test(host))?.name || "";
+  }
+
+  function categoryForTab(tab, categoryOverrides = {}) {
+    const hostCategory = categoryForHost(tab.host, categoryOverrides);
+    if (hostCategory) return hostCategory;
+    return /\bnews\b/i.test(String(tab.title || "")) ? "News" : "";
   }
 
   function isOrganizable(tab) {
@@ -86,16 +105,25 @@
   function nameForTabs(tabs, categoryOverrides = {}) {
     const safeTabs = normalizedTabs(tabs);
     const hosts = [...new Set(safeTabs.map((tab) => tab.host))];
+    if (hosts.length === 1) return labelForHost(hosts[0]);
     const categories = safeTabs
-      .map((tab) => categoryForHost(tab.host, categoryOverrides))
+      .map((tab) => categoryForTab(tab, categoryOverrides))
       .filter(Boolean);
     const category = categories.length === safeTabs.length && categories[0] &&
       categories.every((value) => value === categories[0])
       ? categories[0]
       : "";
     if (category) return category;
-    if (hosts.length === 1) return labelForHost(hosts[0]);
     return "Related tabs";
+  }
+
+  function nameForLinkedTabs(tabs, sourceHost = "") {
+    const safeTabs = normalizedTabs(tabs);
+    const hosts = [...new Set(safeTabs.map((tab) => tab.host))];
+    if (hosts.length === 1) return `${LINKED_TAB_PREFIX}${labelForHost(hosts[0])}`;
+
+    const source = hostFromUrl(sourceHost) || normalizedHost(sourceHost);
+    return source ? `${LINKED_TAB_PREFIX}${labelForHost(source)}` : "Related tabs";
   }
 
   function colorForName(name) {
@@ -110,8 +138,10 @@
     const candidates = normalizedTabs(tabs).filter((tab) => tab.groupId === TAB_GROUP_NONE);
     const buckets = new Map();
     for (const tab of candidates) {
-      const category = categoryForHost(tab.host, categoryOverrides);
-      const key = category ? `category:${category}` : `host:${tab.host}`;
+      const category = categoryForTab(tab, categoryOverrides);
+      const key = CROSS_SITE_CATEGORY_NAMES.has(category)
+        ? `category:${category}`
+        : `host:${tab.host}`;
       const items = buckets.get(key) || [];
       items.push(tab);
       buckets.set(key, items);
@@ -136,7 +166,7 @@
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 60);
-    return CATCH_ALL_GROUP_TITLE.test(title) ? "" : title;
+    return CATCH_ALL_GROUP_TITLE.test(title) || GENERIC_WORKSTREAM_TITLE.test(title) ? "" : title;
   }
 
   // Accept a model's proposed clusters only after resolving every tab id against
@@ -183,6 +213,7 @@
     groupPayload,
     hostFromUrl,
     isOrganizable,
+    nameForLinkedTabs,
     nameForTabs,
     normalizedTabs,
     plansForExplicitGroups,

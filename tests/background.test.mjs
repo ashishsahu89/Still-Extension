@@ -1483,9 +1483,9 @@ test("one-click organisation groups related tabs, supports undo, and keeps a lin
   assert.equal(organised.ok, true);
   assert.equal(organised.groups.length, 1);
   assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, harness.tabs.find((tab) => tab.id === 4).groupId);
-  assert.equal(harness.tabGroups.get(1).title, "Social");
+  assert.equal(harness.tabGroups.get(1).title, "Reddit");
   assert.equal(harness.tabGroups.get(1).collapsed, true);
-  assert.deepEqual(harness.tabGroupMoves[0], { groupId: 1, index: 0 });
+  assert.deepEqual(harness.tabGroupMoves[0], { groupId: 1, index: -1 });
 
   const undone = await harness.send({ type: "UNDO_TAB_ORGANIZATION" });
   assert.equal(undone.ok, true);
@@ -1497,9 +1497,9 @@ test("one-click organisation groups related tabs, supports undo, and keeps a lin
     tabId: 2
   });
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, harness.tabs.find((tab) => tab.id === 2).groupId);
-  assert.equal(harness.tabGroups.get(2).title, "Related tabs");
+  assert.equal(harness.tabGroups.get(2).title, "🔗 News");
   assert.equal(harness.tabGroups.get(2).collapsed, false);
-  assert.deepEqual(harness.tabGroupMoves, [{ groupId: 1, index: 0 }]);
+  assert.deepEqual(harness.tabGroupMoves, [{ groupId: 1, index: -1 }]);
 
   harness.removeTab(2);
   await eventsCall(harness.events.tabRemoved, 2, { windowId: 1 });
@@ -1624,16 +1624,44 @@ test("a same-site link trail keeps its local name and never calls AI", async () 
 
   await eventsCall(harness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 2 });
   await harness.runTimers();
-  assert.equal(harness.tabGroups.get(1).title, "Example");
+  assert.equal(harness.tabGroups.get(1).title, "🔗 Example");
   assert.equal(requests, 0);
 
   await eventsCall(harness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 3 });
   await harness.runTimers();
-  assert.equal(harness.tabGroups.get(1).title, "Example");
+  assert.equal(harness.tabGroups.get(1).title, "🔗 Example");
   assert.equal(requests, 0);
 });
 
-test("organisation uses on-device categories for unfamiliar related tabs", async () => {
+test("local linked-tab names use the source for every mixed-site group", async () => {
+  const sourceTabs = [
+    { id: 1, windowId: 1, index: 0, groupId: -1, url: "https://github.com/still/focus", title: "Still focus" },
+    { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://example.org/notes", title: "Notes" }
+  ];
+  const mixedHarness = createHarness({ initialState: baseState(), tabs: sourceTabs });
+  await settle();
+
+  await eventsCall(mixedHarness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 2 });
+  await mixedHarness.runTimers();
+  assert.equal(mixedHarness.tabGroups.get(1).title, "🔗 GitHub");
+  assert.equal(mixedHarness.tabGroups.get(1).collapsed, false);
+  assert.deepEqual(mixedHarness.tabGroupMoves, []);
+
+  const workHarness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, groupId: -1, url: "https://github.com/still/focus", title: "Still focus" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://linear.app/still/issue-1", title: "Still issue" }
+    ]
+  });
+  await settle();
+
+  await eventsCall(workHarness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 2 });
+  await workHarness.runTimers();
+  assert.equal(workHarness.tabGroups.get(1).title, "🔗 GitHub");
+});
+
+test("organisation leaves one-off learning sites ungrouped without a specific task", async () => {
   const harness = createHarness({
     initialState: baseState(),
     tabs: [
@@ -1654,10 +1682,57 @@ test("organisation uses on-device categories for unfamiliar related tabs", async
   });
 
   assert.equal(organised.ok, true);
-  assert.equal(organised.groups.length, 1);
-  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, harness.tabs.find((tab) => tab.id === 2).groupId);
+  assert.equal(organised.groups.length, 0);
+  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, -1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 2).groupId, -1);
   assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, -1);
-  assert.equal(harness.tabGroups.get(1).title, "Learning");
+});
+
+test("organisation recognizes News in titles from otherwise unclassified sites", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://localpaper.example/latest", title: "Local news and updates" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://techbrief.example/home", title: "Tech news today" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://example.com/brief", title: "Daily briefing" }
+    ]
+  });
+  await settle();
+
+  const organised = await harness.send({ type: "ORGANIZE_TABS" });
+
+  assert.equal(organised.ok, true);
+  assert.equal(organised.groups.length, 1);
+  assert.equal(harness.tabGroups.get(1).title, "News");
+  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, 1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 2).groupId, 1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, -1);
+});
+
+test("organisation splits generic work tabs by service and rejects an AI Work title", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://github.com/still/one", title: "Still issue one" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://github.com/still/two", title: "Still issue two" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://linear.app/still/issue-1", title: "Roadmap issue" },
+      { id: 4, windowId: 1, index: 3, groupId: -1, url: "https://linear.app/still/issue-2", title: "Design issue" },
+      { id: 5, windowId: 1, index: 4, groupId: -1, url: "https://app.slack.com/client/team", title: "Still team" }
+    ]
+  });
+  await settle();
+
+  const organised = await harness.send({
+    type: "ORGANIZE_TABS",
+    tabPlans: [{ title: "Work", tabIds: [1, 2, 3, 4, 5] }]
+  });
+
+  assert.equal(organised.ok, true);
+  assert.equal(organised.usedLocalFallback, true);
+  assert.equal(organised.groups.length, 2);
+  assert.equal(harness.tabGroups.get(1).title, "GitHub");
+  assert.equal(harness.tabGroups.get(2).title, "Linear");
+  assert.equal(harness.tabs.find((tab) => tab.id === 5).groupId, -1);
 });
 
 test("organisation respects a useful AI category plan and preserves its group name", async () => {
@@ -1743,8 +1818,8 @@ test("organisation keeps structurally valid cross-domain AI groups without a loc
   assert.equal(harness.tabGroups.get(1).collapsed, true);
   assert.equal(harness.tabGroups.get(2).collapsed, true);
   assert.deepEqual(harness.tabGroupMoves, [
-    { groupId: 2, index: 0 },
-    { groupId: 1, index: 0 }
+    { groupId: 1, index: -1 },
+    { groupId: 2, index: -1 }
   ]);
 });
 
@@ -1752,8 +1827,8 @@ test("organisation falls back to obvious local groups when every explicit AI pla
   const harness = createHarness({
     initialState: baseState(),
     tabs: [
-      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://coursera.org/", title: "Coursera" },
-      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://udemy.com/", title: "Udemy" },
+      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://x.com/home", title: "X" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://reddit.com/r/productivity", title: "Reddit" },
       { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://github.com/", title: "GitHub" },
       { id: 4, windowId: 1, index: 3, groupId: -1, url: "https://news.ycombinator.com/", title: "Hacker News" }
     ]
@@ -1772,7 +1847,7 @@ test("organisation falls back to obvious local groups when every explicit AI pla
   assert.equal(organised.ok, true);
   assert.equal(organised.usedLocalFallback, true);
   assert.equal(organised.groups.length, 1);
-  assert.equal(harness.tabGroups.get(1).title, "Learning");
+  assert.equal(harness.tabGroups.get(1).title, "Social");
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, 1);
   assert.equal(harness.tabs.find((tab) => tab.id === 2).groupId, 1);
   assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, -1);
