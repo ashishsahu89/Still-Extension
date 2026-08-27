@@ -3,6 +3,7 @@ let timerId;
 let exitTimerId;
 let activeStrict = true;
 let pendingTabNaming = null;
+let focusOptionsOpen = false;
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -51,31 +52,35 @@ async function renderTabOrganizer() {
     chrome.storage.local.get("tabCrowdingDismissedUntil")
   ]);
   if (!response?.ok) return;
-  const noun = response.eligibleTabs === 1 ? "tab" : "tabs";
   const crowding = response.crowding || null;
   const showCrowding = Boolean(
     crowding?.isCrowded &&
     crowding.suggestionsEnabled !== false &&
     Number(dismissed.tabCrowdingDismissedUntil || 0) <= Date.now()
   );
+  const eligibleTabs = Math.max(0, Number(response.eligibleTabs) || 0);
+  const ungroupedTabs = Math.max(0, Number(crowding?.ungroupedTabs) || eligibleTabs);
+  const tabCount = showCrowding ? ungroupedTabs : eligibleTabs;
+  const tabLabel = tabCount === 0
+    ? "No tabs ready to organize"
+    : `${tabCount} ${tabCount === 1 ? "tab" : "tabs"} ready to organize`;
   $("#tab-summary").textContent = showCrowding
-    ? `${crowding.ungroupedTabs} ungrouped`
-    : `${response.eligibleTabs} ${noun}`;
+    ? `${ungroupedTabs} ungrouped`
+    : `${eligibleTabs} ${eligibleTabs === 1 ? "tab" : "tabs"}`;
   $("#tab-crowding-card").hidden = !showCrowding;
   $("#tab-organizer-copy").hidden = showCrowding;
-  $("#organize-tabs").textContent = showCrowding
-    ? `Organise ${crowding.ungroupedTabs} tabs`
-    : "Organise tabs";
+  $("#tab-organizer-copy").textContent = tabLabel;
+  $("#organize-tabs").textContent = "Organize tabs";
   if (showCrowding) {
-    $("#tab-crowding-copy").textContent =
-      `${crowding.ungroupedTabs} tabs are squeezed into this window.`;
+    $("#tab-crowding-title").textContent = tabLabel;
+    $("#tab-crowding-copy").textContent = "";
   }
   $("#undo-tab-organization").hidden = !response.undoAvailable;
-  $("#organize-tabs").disabled = response.eligibleTabs < 2;
+  $("#organize-tabs").disabled = eligibleTabs < 2;
   if (response.undoAvailable && !$("#tab-organizer-status").textContent) {
     setTabOrganizerStatus("Tabs are organised.");
   }
-  if (response.eligibleTabs < 2) {
+  if (eligibleTabs < 2) {
     setTabOrganizerStatus("Open at least two web tabs to organise them.");
   }
 }
@@ -360,10 +365,13 @@ function renderStats(stats) {
 function renderFocus(focus, strictFocus = true) {
   const active = focus?.endAt > Date.now();
   activeStrict = active ? focus.strict ?? strictFocus !== false : strictFocus !== false;
-  $("#ready-view").hidden = active;
+  if (active) focusOptionsOpen = false;
+  document.body.classList.toggle("focus-active", active);
+  $("#ready-view").hidden = active || !focusOptionsOpen;
   $("#active-view").hidden = !active;
   $("#strict-exit-view").hidden = true;
-  $("#protected-section").hidden = false;
+  $("#protected-section").hidden = true;
+  $("#open-focus-options").hidden = active;
   if (!active) {
     clearInterval(timerId);
     clearInterval(exitTimerId);
@@ -393,7 +401,37 @@ $("#plus").addEventListener("click", () => {
   $("#minutes").textContent = selectedMinutes;
 });
 
+$("#quick-focus-duration").addEventListener("change", () => {
+  selectedMinutes = Number($("#quick-focus-duration").value) || 25;
+  $("#minutes").textContent = selectedMinutes;
+});
+
+$("#quick-focus").addEventListener("click", async () => {
+  focusOptionsOpen = false;
+  await chrome.runtime.sendMessage({
+    type: "START_FOCUS",
+    minutes: Number($("#quick-focus-duration").value) || 25,
+    intention: ""
+  });
+  render();
+});
+
+$("#open-focus-options").addEventListener("click", () => {
+  focusOptionsOpen = true;
+  $("#ready-view").hidden = false;
+  $("#open-focus-options").setAttribute("aria-expanded", "true");
+  $("#intention").focus();
+});
+
+$("#close-focus-options").addEventListener("click", () => {
+  focusOptionsOpen = false;
+  $("#ready-view").hidden = true;
+  $("#open-focus-options").setAttribute("aria-expanded", "false");
+  $("#open-focus-options").focus();
+});
+
 $("#begin-focus").addEventListener("click", async () => {
+  focusOptionsOpen = false;
   const intention = $("#intention").value.trim();
   await chrome.runtime.sendMessage({
     type: "START_FOCUS",

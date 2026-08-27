@@ -22,8 +22,12 @@
         </button>
       </header>
 
-      <section id="ready-view">
-        <h1>Ready when you are.</h1>
+      <section id="ready-view" class="focus-options" hidden>
+        <div class="focus-options-heading">
+          <p class="active-kicker">Focus</p>
+          <button class="quiet-button focus-options-close" id="close-focus-options" type="button">Done</button>
+        </div>
+        <h1>Set your focus.</h1>
         <div class="duration-picker" aria-label="Focus duration">
           <button id="minus" aria-label="Subtract five minutes">−</button>
           <div>
@@ -39,11 +43,11 @@
       </section>
 
       <section id="active-view" hidden>
-        <p class="active-kicker">Protected focus</p>
+        <p class="active-kicker">Focusing</p>
         <div class="active-orb"><span></span></div>
         <div class="active-time" id="active-time">25:00</div>
         <p class="active-intention" id="active-intention"></p>
-        <button class="quiet-button" id="end-focus">End session</button>
+        <button class="quiet-button" id="end-focus">End focus</button>
       </section>
 
       <section id="strict-exit-view" class="strict-exit-view" hidden>
@@ -79,20 +83,42 @@
           <h2 id="tabs-heading">Tabs</h2>
           <span id="tab-summary"></span>
         </div>
+        <div class="tab-organizer-context">
+          <p class="tabs-kicker">Workspace</p>
+          <p class="tabs-copy" id="tab-organizer-copy">Tabs ready to organize.</p>
+        </div>
         <div class="tab-crowding-card" id="tab-crowding-card" hidden>
           <div class="tab-crowding-visual" aria-hidden="true">
             <span></span><span></span><span></span><span></span>
           </div>
           <div class="tab-crowding-copy">
-            <strong>Tabs are getting hard to identify</strong>
+            <strong id="tab-crowding-title">Tabs ready to organize</strong>
             <p id="tab-crowding-copy"></p>
           </div>
           <button class="quiet-button tab-crowding-dismiss" id="dismiss-tab-crowding" type="button">Not now</button>
         </div>
-        <p class="tabs-copy" id="tab-organizer-copy">
-          Put related tabs together, then keep linked tabs together as you browse.
-        </p>
-        <button class="secondary-button organize-tabs-button" id="organize-tabs">Organise tabs</button>
+        <button class="primary-button organize-tabs-button" id="organize-tabs">Organize tabs</button>
+        <div class="quick-focus-row">
+          <button class="secondary-button quick-focus-button" id="quick-focus" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="8.25"></circle>
+              <path d="M12 7.5v5l3.25 2"></path>
+            </svg>
+            <span>Start focus</span>
+          </button>
+          <label class="quick-focus-duration" for="quick-focus-duration">
+            <span class="sr-only">Focus duration</span>
+            <select id="quick-focus-duration" aria-label="Focus duration">
+              <option value="15">15 min</option>
+              <option value="25" selected>25 min</option>
+              <option value="45">45 min</option>
+              <option value="60">60 min</option>
+            </select>
+          </label>
+        </div>
+        <button class="quiet-button focus-options-toggle" id="open-focus-options" type="button" aria-expanded="false" aria-controls="ready-view">
+          Set intention or duration
+        </button>
         <div class="tab-organization-feedback" id="tab-organization-feedback" hidden>
           <p class="tab-organizer-status" id="tab-organizer-status" role="status" aria-live="polite"></p>
           <button class="quiet-button undo-tabs-button" id="undo-tab-organization" hidden>Undo</button>
