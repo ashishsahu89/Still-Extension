@@ -98,7 +98,8 @@
         index: Number.isInteger(tab.index) ? tab.index : 0,
         groupId: Number.isInteger(tab.groupId) ? tab.groupId : TAB_GROUP_NONE,
         title: String(tab.title || "").replace(/\s+/g, " ").trim().slice(0, 160),
-        host: hostFromUrl(tab.url) || normalizedHost(tab.host)
+        host: hostFromUrl(tab.url) || normalizedHost(tab.host),
+        favIconUrl: String(tab.favIconUrl || "").trim()
       }));
   }
 

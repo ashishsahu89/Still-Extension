@@ -131,6 +131,72 @@ h1 {
   line-height: 1.45;
 }
 
+.tab-crowding-card {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  margin: 2px 0 10px;
+  padding: 11px;
+  border: 1px solid #d8bd7a;
+  border-radius: 11px;
+  background: #fff8e8;
+}
+
+.tab-crowding-card[hidden] {
+  display: none;
+}
+
+.tab-crowding-visual {
+  display: flex;
+  align-items: stretch;
+  width: 36px;
+  height: 30px;
+  padding: 5px 4px;
+  overflow: hidden;
+  border: 1px solid #d8bd7a;
+  border-radius: 7px;
+  background: #fffdf8;
+}
+
+.tab-crowding-visual span {
+  flex: 1 1 0;
+  min-width: 4px;
+  border-right: 1px solid #d8bd7a;
+  background: #f3dfaa;
+}
+
+.tab-crowding-visual span:first-child {
+  border-radius: 2px 0 0 2px;
+}
+
+.tab-crowding-visual span:last-child {
+  border-right: 0;
+  border-radius: 0 2px 2px 0;
+}
+
+.tab-crowding-copy strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.tab-crowding-copy p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.tab-crowding-dismiss {
+  margin: 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .organize-tabs-button {
   width: 100%;
   height: 40px;
@@ -163,6 +229,10 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 9px;
   background: var(--sage-soft);
+}
+
+.tab-organization-feedback[hidden] {
+  display: none;
 }
 
 .undo-tabs-button {

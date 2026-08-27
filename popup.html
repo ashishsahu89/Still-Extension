@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Still</title>
     <link rel="stylesheet" href="ui.css?v=0.6.2" />
-    <link rel="stylesheet" href="popup.css?v=0.6.2" />
+    <link rel="stylesheet" href="popup.css?v=0.9.1" />
   </head>
   <body>
     <main class="popup-shell">
@@ -79,6 +79,16 @@
           <h2 id="tabs-heading">Tabs</h2>
           <span id="tab-summary"></span>
         </div>
+        <div class="tab-crowding-card" id="tab-crowding-card" hidden>
+          <div class="tab-crowding-visual" aria-hidden="true">
+            <span></span><span></span><span></span><span></span>
+          </div>
+          <div class="tab-crowding-copy">
+            <strong>Tabs are getting hard to identify</strong>
+            <p id="tab-crowding-copy"></p>
+          </div>
+          <button class="quiet-button tab-crowding-dismiss" id="dismiss-tab-crowding" type="button">Not now</button>
+        </div>
         <p class="tabs-copy" id="tab-organizer-copy">
           Put related tabs together, then keep linked tabs together as you browse.
         </p>
@@ -108,6 +118,7 @@
     <script src="preview-runtime.js"></script>
     <script src="ai-connections.js"></script>
     <script src="chrome-ai.js"></script>
-    <script src="popup.js"></script>
+    <script src="tab-crowding.js?v=0.9.1"></script>
+    <script src="popup.js?v=0.9.1"></script>
   </body>
 </html>

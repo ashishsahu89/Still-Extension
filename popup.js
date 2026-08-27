@@ -46,10 +46,30 @@ function setTabOrganizerStatus(message = "") {
 }
 
 async function renderTabOrganizer() {
-  const response = await chrome.runtime.sendMessage({ type: "GET_TAB_ORGANIZER_STATUS" });
+  const [response, dismissed] = await Promise.all([
+    chrome.runtime.sendMessage({ type: "GET_TAB_ORGANIZER_STATUS" }),
+    chrome.storage.local.get("tabCrowdingDismissedUntil")
+  ]);
   if (!response?.ok) return;
   const noun = response.eligibleTabs === 1 ? "tab" : "tabs";
-  $("#tab-summary").textContent = `${response.eligibleTabs} ${noun}`;
+  const crowding = response.crowding || null;
+  const showCrowding = Boolean(
+    crowding?.isCrowded &&
+    crowding.suggestionsEnabled !== false &&
+    Number(dismissed.tabCrowdingDismissedUntil || 0) <= Date.now()
+  );
+  $("#tab-summary").textContent = showCrowding
+    ? `${crowding.ungroupedTabs} ungrouped`
+    : `${response.eligibleTabs} ${noun}`;
+  $("#tab-crowding-card").hidden = !showCrowding;
+  $("#tab-organizer-copy").hidden = showCrowding;
+  $("#organize-tabs").textContent = showCrowding
+    ? `Organise ${crowding.ungroupedTabs} tabs`
+    : "Organise tabs";
+  if (showCrowding) {
+    $("#tab-crowding-copy").textContent =
+      `${crowding.ungroupedTabs} tabs are squeezed into this window.`;
+  }
   $("#undo-tab-organization").hidden = !response.undoAvailable;
   $("#organize-tabs").disabled = response.eligibleTabs < 2;
   if (response.undoAvailable && !$("#tab-organizer-status").textContent) {
@@ -59,6 +79,13 @@ async function renderTabOrganizer() {
     setTabOrganizerStatus("Open at least two web tabs to organise them.");
   }
 }
+
+$("#dismiss-tab-crowding").addEventListener("click", async () => {
+  await chrome.storage.local.set({
+    tabCrowdingDismissedUntil: Date.now() + 4 * 60 * 60 * 1000
+  });
+  await renderTabOrganizer();
+});
 
 function safeGroupTitle(value) {
   return String(value || "")

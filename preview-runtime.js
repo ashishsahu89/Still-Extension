@@ -286,7 +286,22 @@ if (typeof chrome === "undefined" || !chrome.storage?.local) {
     runtime: {
       async sendMessage(message) {
         if (message.type === "GET_TAB_ORGANIZER_STATUS") {
-          return { ok: true, eligibleTabs: previewTabs.length, managedGroups: 0, undoAvailable: previewUndoAvailable };
+          const crowded = previewParams.get("crowded") === "true" && !previewUndoAvailable;
+          return {
+            ok: true,
+            eligibleTabs: crowded ? 18 : previewTabs.length,
+            managedGroups: 0,
+            undoAvailable: previewUndoAvailable,
+            crowding: {
+              isCrowded: crowded,
+              estimatedTabWidth: crowded ? 72 : 180,
+              ungroupedTabs: crowded ? 18 : previewTabs.length,
+              visibleTabs: crowded ? 22 : previewTabs.length,
+              windowWidth: crowded ? 1440 : 1280,
+              threshold: 90,
+              suggestionsEnabled: previewState.tabCrowdingSuggestionsEnabled !== false
+            }
+          };
         }
         if (message.type === "ORGANIZE_TABS") {
           previewUndoAvailable = true;

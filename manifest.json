@@ -7,6 +7,7 @@
   "permissions": [
     "alarms",
     "declarativeNetRequest",
+    "favicon",
     "idle",
     "notifications",
     "scripting",

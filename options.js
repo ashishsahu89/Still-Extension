@@ -2,10 +2,10 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
 const VIEW_COPY = {
-  protection: {
-    title: "Protection",
-    intro: "Shape the space between impulse and choice.",
-    documentTitle: "Protection · Still"
+  focus: {
+    title: "Focus",
+    intro: "Choose how Still handles distracting sites.",
+    documentTitle: "Focus · Still"
   },
   insights: {
     title: "Insights",
@@ -14,17 +14,22 @@ const VIEW_COPY = {
   },
   routines: {
     title: "Routines",
-    intro: "Let focus begin before distraction does.",
+    intro: "Schedule recurring focus sessions.",
     documentTitle: "Routines · Still"
   },
+  tabs: {
+    title: "Tabs",
+    intro: "Choose how Still organizes related tabs.",
+    documentTitle: "Tabs · Still"
+  },
   ai: {
-    title: "AI",
-    intro: "Connect intelligence on your terms.",
-    documentTitle: "AI · Still"
+    title: "AI assistance",
+    intro: "Optional intelligence, on your terms.",
+    documentTitle: "AI assistance · Still"
   },
   data: {
     title: "Data & privacy",
-    intro: "Everything stays on this device.",
+    intro: "See what is stored and what can leave this device.",
     documentTitle: "Data & privacy · Still"
   }
 };
@@ -285,7 +290,7 @@ function showSaved() {
   $("#saved").textContent = "Saved";
   $("#saved").classList.add("is-saving");
   savedTimer = setTimeout(() => {
-    $("#saved").textContent = "Saved locally";
+    $("#saved").textContent = "Settings saved";
     $("#saved").classList.remove("is-saving");
   }, 1200);
 }
@@ -579,7 +584,8 @@ async function handleAIConnectionAction(event) {
 }
 
 function setView(view, { updateHash = true } = {}) {
-  const resolved = VIEW_COPY[view] ? view : "protection";
+  const requested = view === "protection" ? "focus" : view;
+  const resolved = VIEW_COPY[requested] ? requested : "focus";
   for (const panel of $$("[data-view-panel]")) {
     panel.hidden = panel.dataset.viewPanel !== resolved;
   }
@@ -777,7 +783,7 @@ function openRoutineForm(routine = null, { suggested = false } = {}) {
     ? "Review the details"
     : editing
       ? routine.name
-      : "Create a rhythm";
+      : "Create routine";
   for (const input of $$("#routine-days input")) {
     input.checked = routine
       ? (routine.days || []).includes(Number(input.value))
@@ -857,7 +863,7 @@ function renderRoutines() {
     title.textContent = "No routines yet";
     const copy = document.createElement("p");
     copy.textContent =
-      "Create a recurring window for deep work, study, or a quieter evening online.";
+      "Set days and times for Still to start—or ask before starting—a focus session.";
     empty.append(title, copy);
     container.append(empty);
     return;
@@ -1067,6 +1073,7 @@ function renderCategoryActivity(range) {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   }
+  $("#reset-categories").hidden = currentActivityView !== "category";
 
   if (currentActivityView === "website") {
     renderWebsiteActivity(container);
@@ -1600,11 +1607,39 @@ async function resetLearnedCategories() {
   }
 }
 
+async function clearActivityHistory() {
+  if (!confirm("Clear all focus sessions, site usage, and impulse history?")) return;
+  const cleared = {
+    stats: {},
+    siteStats: {},
+    usageStats: {},
+    usageEvents: [],
+    impulseEvents: [],
+    focusSessions: [],
+    aiInsightCache: {}
+  };
+  Object.assign(insightsData, cleared);
+  await chrome.storage.local.set(cleared);
+  renderInsights();
+  renderHistory();
+  $("#data-action-status").textContent = "Activity history cleared.";
+  showSaved();
+}
+
+async function clearIntentions() {
+  if (!confirm("Clear all saved intentions?")) return;
+  insightsData.intentions = [];
+  await chrome.storage.local.set({ intentions: [] });
+  renderIntentions([]);
+  $("#data-action-status").textContent = "Saved intentions cleared.";
+  showSaved();
+}
+
 async function explainCurrentPattern() {
   if (!canUseChromeAI()) return;
   const range = rangeForPeriod(currentPeriod);
   if (insightsData.chromeAIEnabled !== true) {
-    setView("data");
+    setView("ai");
     $("#chrome-ai-enabled").focus();
     return;
   }
@@ -1814,6 +1849,7 @@ async function render() {
     "pauseSeconds",
     "usageTrackingEnabled",
     "linkTrailGroupingEnabled",
+    "tabCrowdingSuggestionsEnabled",
     "protectedSites",
     "stats",
     "siteStats",
@@ -1861,13 +1897,15 @@ async function render() {
     insightsData.usageTrackingEnabled !== false;
   $("#link-trail-grouping-enabled").checked =
     insightsData.linkTrailGroupingEnabled !== false;
+  $("#tab-crowding-suggestions-enabled").checked =
+    insightsData.tabCrowdingSuggestionsEnabled !== false;
   $("#chrome-ai-enabled").checked = insightsData.chromeAIEnabled === true;
   renderSites(insightsData.protectedSites || []);
   renderRoutineSuggestion();
   renderRoutines();
   renderAIConnections();
   renderHistory();
-  setView(location.hash.slice(1) || "protection", { updateHash: false });
+  setView(location.hash.slice(1) || "focus", { updateHash: false });
   void refreshChromeAIStatus();
 }
 
@@ -1888,6 +1926,10 @@ $("#link-trail-grouping-enabled").addEventListener("change", (event) => {
   insightsData.linkTrailGroupingEnabled = event.target.checked;
   saveSetting("linkTrailGroupingEnabled", event.target.checked);
 });
+$("#tab-crowding-suggestions-enabled").addEventListener("change", (event) => {
+  insightsData.tabCrowdingSuggestionsEnabled = event.target.checked;
+  saveSetting("tabCrowdingSuggestionsEnabled", event.target.checked);
+});
 $("#chrome-ai-enabled").addEventListener("change", async (event) => {
   insightsData.chromeAIEnabled = event.target.checked;
   if (!event.target.checked) {
@@ -1900,6 +1942,8 @@ $("#chrome-ai-enabled").addEventListener("change", async (event) => {
 });
 $("#explain-pattern").addEventListener("click", explainCurrentPattern);
 $("#reset-categories").addEventListener("click", resetLearnedCategories);
+$("#clear-activity-history").addEventListener("click", clearActivityHistory);
+$("#clear-intentions").addEventListener("click", clearIntentions);
 $("#add-ai-connection").addEventListener("click", () => openAIConnectionForm());
 $("#ai-connection-list").addEventListener("click", handleAIConnectionAction);
 $("#ai-connection-form").addEventListener("submit", saveTestedAIConnection);
@@ -2055,7 +2099,7 @@ for (const button of $$("[data-activity-view]")) {
 }
 
 window.addEventListener("hashchange", () =>
-  setView(location.hash.slice(1) || "protection", { updateHash: false })
+  setView(location.hash.slice(1) || "focus", { updateHash: false })
 );
 
 if (chrome.storage?.onChanged) {

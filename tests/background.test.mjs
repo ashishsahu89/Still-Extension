@@ -11,6 +11,10 @@ const tabOrganizerCode = await readFile(
   new URL("../tab-organizer.js", import.meta.url),
   "utf8"
 );
+const tabCrowdingCode = await readFile(
+  new URL("../tab-crowding.js", import.meta.url),
+  "utf8"
+);
 const aiConnectionsCode = await readFile(
   new URL("../ai-connections.js", import.meta.url),
   "utf8"
@@ -41,6 +45,7 @@ function createHarness({
   tabs = [],
   initialNow = 1_800_000_000_000,
   initialFocusedWindowId = 1,
+  windowWidth = 1280,
   initialIdleState = "active",
   fetchImpl
 } = {}) {
@@ -218,6 +223,13 @@ function createHarness({
         tabGroups.set(groupId, group);
         for (const listener of events.tabGroupUpdated.listeners) listener(clone(group));
         return clone(group);
+      },
+      async query(queryInfo = {}) {
+        return clone(
+          Array.from(tabGroups.values()).filter(
+            (group) => queryInfo.windowId === undefined || group.windowId === queryInfo.windowId
+          )
+        );
       }
     },
     windows: {
@@ -228,6 +240,9 @@ function createHarness({
           id: focusedWindowId,
           focused: focusedWindowId !== -1
         };
+      },
+      async get(windowId) {
+        return { id: windowId, width: windowWidth, focused: windowId === focusedWindowId };
       }
     },
     idle: {
@@ -270,7 +285,7 @@ function createHarness({
     }
   };
 
-  vm.runInNewContext(`${tabOrganizerCode}\n${aiConnectionsCode}\n${backgroundCode}`, {
+  vm.runInNewContext(`${tabOrganizerCode}\n${tabCrowdingCode}\n${aiConnectionsCode}\n${backgroundCode}`, {
     chrome,
     Date: FakeDate,
     URL,
@@ -1485,7 +1500,7 @@ test("one-click organisation groups related tabs, supports undo, and keeps a lin
   assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, harness.tabs.find((tab) => tab.id === 4).groupId);
   assert.equal(harness.tabGroups.get(1).title, "Reddit");
   assert.equal(harness.tabGroups.get(1).collapsed, true);
-  assert.deepEqual(harness.tabGroupMoves[0], { groupId: 1, index: -1 });
+  assert.deepEqual(harness.tabGroupMoves[0], { groupId: 1, index: 0 });
 
   const undone = await harness.send({ type: "UNDO_TAB_ORGANIZATION" });
   assert.equal(undone.ok, true);
@@ -1499,11 +1514,60 @@ test("one-click organisation groups related tabs, supports undo, and keeps a lin
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, harness.tabs.find((tab) => tab.id === 2).groupId);
   assert.equal(harness.tabGroups.get(2).title, "🔗 News");
   assert.equal(harness.tabGroups.get(2).collapsed, false);
-  assert.deepEqual(harness.tabGroupMoves, [{ groupId: 1, index: -1 }]);
+  assert.deepEqual(harness.tabGroupMoves, [{ groupId: 1, index: 0 }]);
 
   harness.removeTab(2);
   await eventsCall(harness.events.tabRemoved, 2, { windowId: 1 });
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, -1);
+});
+
+test("bulk organization inserts after existing groups instead of after ordinary tabs", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: 7, url: "https://github.com/openai", title: "GitHub" },
+      { id: 2, windowId: 1, index: 1, groupId: 7, url: "https://github.com/openai/still", title: "Still" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://x.com/", title: "X" },
+      { id: 4, windowId: 1, index: 3, groupId: -1, url: "https://reddit.com/", title: "Reddit" },
+      { id: 5, windowId: 1, index: 4, groupId: -1, url: "https://example.com/", title: "Unrelated" }
+    ]
+  });
+  await settle();
+
+  const organised = await harness.send({ type: "ORGANIZE_TABS" });
+  assert.equal(organised.ok, true);
+  assert.deepEqual(harness.tabGroupMoves, [{ groupId: 1, index: 2 }]);
+});
+
+test("tab organizer status adapts its crowding signal to the current window width", async () => {
+  const crowdedTabs = Array.from({ length: 18 }, (_, index) => ({
+    id: index + 1,
+    windowId: 1,
+    index,
+    active: index === 0,
+    groupId: -1,
+    url: `https://example${index}.com/`,
+    title: `Example ${index}`
+  }));
+  const laptop = createHarness({
+    initialState: baseState(),
+    tabs: crowdedTabs,
+    windowWidth: 1440
+  });
+  await settle();
+  const laptopStatus = await laptop.send({ type: "GET_TAB_ORGANIZER_STATUS" });
+  assert.equal(laptopStatus.crowding.isCrowded, true);
+  assert.equal(laptopStatus.crowding.estimatedTabWidth, 68);
+
+  const widescreen = createHarness({
+    initialState: baseState(),
+    tabs: crowdedTabs,
+    windowWidth: 2400
+  });
+  await settle();
+  const widescreenStatus = await widescreen.send({ type: "GET_TAB_ORGANIZER_STATUS" });
+  assert.equal(widescreenStatus.crowding.isCrowded, false);
+  assert.equal(widescreenStatus.crowding.estimatedTabWidth, 121);
 });
 
 test("disabled link-trail grouping leaves newly opened tabs in place", async () => {
@@ -1818,8 +1882,8 @@ test("organisation keeps structurally valid cross-domain AI groups without a loc
   assert.equal(harness.tabGroups.get(1).collapsed, true);
   assert.equal(harness.tabGroups.get(2).collapsed, true);
   assert.deepEqual(harness.tabGroupMoves, [
-    { groupId: 1, index: -1 },
-    { groupId: 2, index: -1 }
+    { groupId: 1, index: 0 },
+    { groupId: 2, index: 3 }
   ]);
 });
 

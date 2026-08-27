@@ -1,5 +1,5 @@
 if (typeof importScripts === "function") {
-  importScripts("tab-organizer.js", "ai-connections.js");
+  importScripts("tab-organizer.js", "tab-crowding.js", "favicon-colors.js", "ai-connections.js");
 }
 
 const DEFAULTS = {
@@ -26,6 +26,7 @@ const DEFAULTS = {
   usageTracker: null,
   usageTrackingEnabled: true,
   linkTrailGroupingEnabled: true,
+  tabCrowdingSuggestionsEnabled: true,
   chromeAIEnabled: false,
   aiCategoryCache: {},
   aiInsightCache: {},
@@ -1491,6 +1492,26 @@ async function safeTabGroupMove(groupId, index = 0) {
   }
 }
 
+async function colorForTabGroup(tabs, fallbackColor, options = {}) {
+  const faviconColor = await globalThis.StillFaviconColors?.colorForTabs(tabs, options);
+  return faviconColor || fallbackColor;
+}
+
+function bulkGroupInsertionIndex(tabs = []) {
+  const groupedIndexes = tabs
+    .filter((tab) => !tab?.pinned && Number.isInteger(tab?.groupId) && tab.groupId !== TAB_GROUP_NONE)
+    .map((tab) => Number(tab?.index))
+    .filter(Number.isInteger);
+  if (groupedIndexes.length) return Math.max(...groupedIndexes) + 1;
+
+  const firstUnpinnedIndex = tabs
+    .filter((tab) => !tab?.pinned)
+    .map((tab) => Number(tab?.index))
+    .filter(Number.isInteger)
+    .sort((left, right) => left - right)[0];
+  return Number.isInteger(firstUnpinnedIndex) ? firstUnpinnedIndex : 0;
+}
+
 async function tabsInGroup(groupId) {
   const tabs = await chrome.tabs.query({});
   return tabs.filter((tab) => tab.groupId === groupId);
@@ -1610,7 +1631,11 @@ async function applyLinkTrailAIName(groupId, fingerprint, aiTitle) {
   const state = await getTabOrganizerState();
   const metadata = state.managedGroups[groupId];
   if (!metadata || metadata.manualName || metadata.kind !== "linkTrail") return null;
-  const color = globalThis.StillTabOrganizer.colorForName(aiTitle);
+  const color = await colorForTabGroup(
+    currentTabs,
+    metadata.color || globalThis.StillTabOrganizer.colorForName(aiTitle),
+    { sourceHost: metadata.sourceHost }
+  );
   await safeTabGroupUpdate(groupId, { title: aiTitle, color });
   state.managedGroups[groupId] = {
     ...metadata,
@@ -1678,7 +1703,11 @@ async function applyAutoGroupName(groupId, { allowAI = true } = {}) {
   ) {
     title = metadata.semanticName;
   }
-  const color = globalThis.StillTabOrganizer.colorForName(title);
+  const color = await colorForTabGroup(
+    tabs,
+    metadata.color || globalThis.StillTabOrganizer.colorForName(title),
+    metadata.kind === "linkTrail" ? { sourceHost: metadata.sourceHost } : {}
+  );
   await safeTabGroupUpdate(groupId, { title, color });
   state.managedGroups[groupId] = {
     ...metadata,
@@ -1761,25 +1790,29 @@ async function organizeTabsInWindow(windowId, categoryOverrides = {}, tabPlans =
 
   const state = await getTabOrganizerState();
   const created = [];
+  let insertionIndex = bulkGroupInsertionIndex(tabs);
   for (const plan of plans) {
     const groupId = await chrome.tabs.group({ tabIds: plan.tabs.map((tab) => tab.id) });
-    await safeTabGroupUpdate(groupId, { title: plan.title, color: plan.color, collapsed: true });
+    const color = await colorForTabGroup(plan.tabs, plan.color);
+    await safeTabGroupUpdate(groupId, { title: plan.title, color, collapsed: true });
     state.managedGroups[groupId] = {
       windowId,
       kind: "bulk",
       autoName: plan.title,
       semanticName: plan.title,
       manualName: false,
-      color: plan.color,
+      color,
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
     created.push({ groupId, tabIds: plan.tabs.map((tab) => tab.id) });
   }
-  // Appending each group in plan order preserves their visual order and avoids
-  // disturbing groups the user already placed at the beginning of the strip.
-  for (const { groupId } of created) {
-    await safeTabGroupMove(groupId, -1);
+  // Place bulk groups after the existing group area. If there are no existing
+  // groups, this is the first unpinned tab, keeping organized groups on the
+  // left while preserving pinned tabs at the front.
+  for (const group of created) {
+    await safeTabGroupMove(group.groupId, insertionIndex);
+    insertionIndex += group.tabIds.length || 1;
   }
   state.undoByWindow[windowId] = { groups: created, createdAt: Date.now() };
   await saveTabOrganizerState(state);
@@ -1836,7 +1869,11 @@ async function addChildTabToSourceGroup(details) {
       [source, navigatedTarget],
       sourceHost
     );
-    const color = globalThis.StillTabOrganizer.colorForName(title);
+    const color = await colorForTabGroup(
+      [source, navigatedTarget],
+      globalThis.StillTabOrganizer.colorForName(title),
+      { sourceHost }
+    );
     groupId = await chrome.tabs.group({ tabIds: [source.id, navigatedTarget.id] });
     await safeTabGroupUpdate(groupId, { title, color, collapsed: false });
     state.managedGroups[groupId] = {
@@ -1878,12 +1915,29 @@ async function applyTabGroupNames(groups) {
 }
 
 async function tabOrganizerStatus(windowId) {
-  const [tabs, state] = await Promise.all([chrome.tabs.query({ windowId }), getTabOrganizerState()]);
+  const [tabs, state, browserWindow, groups, settings] = await Promise.all([
+    chrome.tabs.query({ windowId }),
+    getTabOrganizerState(),
+    chrome.windows.get(windowId).catch(() => ({ id: windowId })),
+    chrome.tabGroups?.query
+      ? chrome.tabGroups.query({ windowId }).catch(() => [])
+      : Promise.resolve([]),
+    chrome.storage.local.get("tabCrowdingSuggestionsEnabled")
+  ]);
+  const crowding = globalThis.StillTabCrowding?.estimate({
+    windowWidth: browserWindow?.width || tabs[0]?.width,
+    tabs,
+    groups
+  });
   return {
     ok: true,
     eligibleTabs: tabs.filter(globalThis.StillTabOrganizer.isOrganizable).length,
     managedGroups: tabOrganizerForWindow(state, windowId).length,
-    undoAvailable: Boolean(state.undoByWindow[windowId]?.groups?.length)
+    undoAvailable: Boolean(state.undoByWindow[windowId]?.groups?.length),
+    crowding: {
+      ...crowding,
+      suggestionsEnabled: settings.tabCrowdingSuggestionsEnabled !== false
+    }
   };
 }
 
