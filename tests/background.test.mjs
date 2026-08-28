@@ -1521,6 +1521,23 @@ test("one-click organisation groups related tabs, supports undo, and keeps a lin
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, -1);
 });
 
+test("keeps the active tab's new bulk group open for orientation", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://reddit.com/r/webdev", title: "Web development" },
+      { id: 2, windowId: 1, index: 1, active: false, groupId: -1, url: "https://www.reddit.com/r/javascript", title: "JavaScript" },
+      { id: 3, windowId: 1, index: 2, active: false, groupId: -1, url: "https://example.com/", title: "Unrelated" }
+    ]
+  });
+  await settle();
+
+  const organised = await harness.send({ type: "ORGANIZE_TABS" });
+  assert.equal(organised.ok, true);
+  assert.equal(organised.groups.length, 1);
+  assert.equal(harness.tabGroups.get(1).collapsed, false);
+});
+
 test("bulk organization inserts after existing groups instead of after ordinary tabs", async () => {
   const harness = createHarness({
     initialState: baseState(),
@@ -1843,7 +1860,7 @@ test("organisation supplements an empty AI plan with an obvious cross-domain Soc
   assert.equal(organised.usedLocalFallback, true);
   assert.equal(organised.groups.length, 1);
   assert.equal(harness.tabGroups.get(1).title, "Social");
-  assert.equal(harness.tabGroups.get(1).collapsed, true);
+  assert.equal(harness.tabGroups.get(1).collapsed, false);
   assert.deepEqual(
     harness.tabs.filter((tab) => tab.groupId === 1).map((tab) => tab.id),
     [1, 2, 3]
@@ -1879,7 +1896,7 @@ test("organisation keeps structurally valid cross-domain AI groups without a loc
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, harness.tabs.find((tab) => tab.id === 3).groupId);
   assert.equal(harness.tabs.find((tab) => tab.id === 4).groupId, harness.tabs.find((tab) => tab.id === 5).groupId);
   assert.equal(harness.tabs.find((tab) => tab.id === 6).groupId, -1);
-  assert.equal(harness.tabGroups.get(1).collapsed, true);
+  assert.equal(harness.tabGroups.get(1).collapsed, false);
   assert.equal(harness.tabGroups.get(2).collapsed, true);
   assert.deepEqual(harness.tabGroupMoves, [
     { groupId: 1, index: 0 },

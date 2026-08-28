@@ -1790,11 +1790,20 @@ async function organizeTabsInWindow(windowId, categoryOverrides = {}, tabPlans =
 
   const state = await getTabOrganizerState();
   const created = [];
+  const activeTabId = tabs.find((tab) => tab.active)?.id;
   let insertionIndex = bulkGroupInsertionIndex(tabs);
   for (const plan of plans) {
     const groupId = await chrome.tabs.group({ tabIds: plan.tabs.map((tab) => tab.id) });
     const color = await colorForTabGroup(plan.tabs, plan.color);
-    await safeTabGroupUpdate(groupId, { title: plan.title, color, collapsed: true });
+    // Keep the group containing the tab the user is viewing open so they can
+    // immediately see where they landed; other bulk groups start collapsed.
+    const containsActiveTab = Number.isInteger(activeTabId) &&
+      plan.tabs.some((tab) => tab.id === activeTabId);
+    await safeTabGroupUpdate(groupId, {
+      title: plan.title,
+      color,
+      collapsed: !containsActiveTab
+    });
     state.managedGroups[groupId] = {
       windowId,
       kind: "bulk",
