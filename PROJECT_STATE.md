@@ -107,7 +107,7 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 - Observe opener/child tab relationships.
 - Keep a newly opened child with its parent workstream.
 - Create, update, collapse/expand, and remove Chrome tab groups.
-- Name local groups by website when every tab is from one site. Locally named linked-tab groups use `🔗 <source website>`; broad category names are reserved for bulk organization.
+- Name local groups by registrable domain when every tab is from one site, adding a meaningful subdomain when needed to distinguish the workspace (`Salesforce · Planview`, `LeanKit · Planview`, or `Glean` for `app.glean.com`). Generic infrastructure prefixes are omitted. Locally named linked-tab groups use the same website label after `🔗`; broad category names are reserved for bulk organization.
 - For bulk organization, cross-site local categories are limited to Social, Video, News, and Shopping. Work, Research, and Learning are insight classifications, not local cross-site buckets; a model must name a specific workstream rather than `Work`, `Research`, or `Learning`.
 - On otherwise unclassified websites, a standalone `news` word in a tab title is a local signal for the News grouping category.
 - Validate model output against the current window.

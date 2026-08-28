@@ -48,7 +48,7 @@ test("organize tabs merges same-domain tabs into an existing linked group", asyn
       const sourceTabs = tabs.filter((tab) => tab.url?.startsWith("http://github.test/"));
       const groupId = await chrome.tabs.group({ tabIds: sourceTabs.map((tab) => tab.id) });
       await chrome.tabGroups.update(groupId, {
-        title: "🔗 Github",
+        title: "🔗 GitHub",
         color: "blue",
         collapsed: false
       });
@@ -62,7 +62,7 @@ test("organize tabs merges same-domain tabs into an existing linked group", asyn
         windowId: sourceTabs[0].windowId,
         kind: "linkTrail",
         sourceHost: "github.test",
-        autoName: "🔗 Github",
+        autoName: "🔗 GitHub",
         manualName: false,
         color: "blue",
         createdAt: Date.now(),
@@ -90,7 +90,7 @@ test("organize tabs merges same-domain tabs into an existing linked group", asyn
     }));
 
     const githubTabs = result.tabs.filter(({ url }) => url?.startsWith("http://github.test/"));
-    const githubGroups = result.groups.filter(({ title }) => title === "🔗 Github");
+    const githubGroups = result.groups.filter(({ title }) => title === "🔗 GitHub");
     assert.equal(githubGroups.length, 1, "same-domain tabs should reuse the linked group");
     assert.equal(
       new Set(githubTabs.map(({ groupId }) => groupId)).size,

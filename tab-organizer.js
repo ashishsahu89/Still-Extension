@@ -26,6 +26,72 @@
   const GENERIC_WORKSTREAM_TITLE = /^(work|research|learning)$/i;
   const CROSS_SITE_CATEGORY_NAMES = new Set(["Social", "Video", "News", "Shopping"]);
   const LINKED_TAB_PREFIX = "🔗 ";
+  const GENERIC_HOST_LABELS = new Set([
+    "www",
+    "www2",
+    "app",
+    "web",
+    "m",
+    "mobile",
+    "amp",
+    "login",
+    "signin",
+    "sign-in",
+    "auth",
+    "sso",
+    "account",
+    "accounts",
+    "my",
+    "dashboard",
+    "portal",
+    "admin",
+    "console",
+    "manage",
+    "panel",
+    "cpanel",
+    "phpmyadmin",
+    "api",
+    "cdn",
+    "static",
+    "assets",
+    "mail",
+    "webmail",
+    "status"
+  ]);
+  const MULTI_LABEL_PUBLIC_SUFFIXES = new Set([
+    "ac.uk",
+    "co.au",
+    "co.in",
+    "co.jp",
+    "co.kr",
+    "co.nz",
+    "co.uk",
+    "com.au",
+    "com.br",
+    "com.cn",
+    "com.in",
+    "com.mx",
+    "com.sg",
+    "com.tr",
+    "gov.uk",
+    "net.au",
+    "net.in",
+    "org.au",
+    "org.in",
+    "org.uk"
+  ]);
+  const TOKEN_LABELS = Object.freeze({
+    github: "GitHub",
+    gitlab: "GitLab",
+    linkedin: "LinkedIn",
+    stackoverflow: "Stack Overflow",
+    youtube: "YouTube",
+    x: "X",
+    salesforce: "Salesforce",
+    leankit: "LeanKit",
+    planview: "Planview",
+    glean: "Glean"
+  });
 
   // Chrome's built-in model uses a broader taxonomy than the local rules. Keep
   // its values bounded and translate the one long label into a compact group name.
@@ -58,19 +124,46 @@
       : "";
   }
 
+  function registrableDomain(host) {
+    const labels = String(host || "").split(".").filter(Boolean);
+    if (labels.length <= 2) return labels.join(".");
+    const suffix = labels.slice(-2).join(".");
+    return MULTI_LABEL_PUBLIC_SUFFIXES.has(suffix)
+      ? labels.slice(-3).join(".")
+      : labels.slice(-2).join(".");
+  }
+
+  function labelForToken(value) {
+    const token = String(value || "").toLowerCase();
+    if (TOKEN_LABELS[token]) return TOKEN_LABELS[token];
+    return String(value || "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\w/g, (character) => character.toUpperCase());
+  }
+
   function labelForHost(host) {
     const normalized = normalizedHost(host);
-    const knownLabels = {
-      "github.com": "GitHub",
-      "gitlab.com": "GitLab",
-      "linkedin.com": "LinkedIn",
-      "stackoverflow.com": "Stack Overflow",
-      "youtube.com": "YouTube",
-      "x.com": "X"
+    if (!normalized) return "Related tabs";
+
+    // Keep the established short label for well-known hosts whose subdomain
+    // is part of the service name rather than a workspace qualifier.
+    const exactLabels = {
+      "news.ycombinator.com": "News"
     };
-    if (knownLabels[normalized]) return knownLabels[normalized];
-    const root = String(host || "").split(".")[0].replace(/[-_]/g, " ");
-    return root ? root.charAt(0).toUpperCase() + root.slice(1) : "Related tabs";
+    if (exactLabels[normalized]) return exactLabels[normalized];
+
+    const domain = registrableDomain(normalized);
+    const domainLabels = domain.split(".");
+    const domainToken = domainLabels[0];
+    const domainLabel = labelForToken(domainToken);
+    const hostLabels = normalized.split(".");
+    const meaningfulSubdomain = hostLabels
+      .slice(0, -domainLabels.length)
+      .find((label) => !GENERIC_HOST_LABELS.has(label));
+
+    return meaningfulSubdomain
+      ? `${domainLabel} · ${labelForToken(meaningfulSubdomain)}`
+      : domainLabel;
   }
 
   function categoryForHost(host, categoryOverrides = {}) {
