@@ -2,7 +2,7 @@
 
 Use this copy in the Chrome Web Store dashboard. Keep the public privacy-policy URL pointed at the `PRIVACY_POLICY.md` file on the default branch until a dedicated policy site is available:
 
-`https://github.com/ashishsahu89/still-focus-extension/blob/main/PRIVACY_POLICY.md`
+`https://github.com/ashishsahu89/Still-Extension/blob/main/PRIVACY_POLICY.md`
 
 ## Store listing
 

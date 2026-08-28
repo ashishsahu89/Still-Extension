@@ -56,4 +56,4 @@ Still is not directed to children under 13, and Still does not knowingly collect
 
 ## Changes and support
 
-We may update this policy when Still's behavior changes. The effective date above will change with a new version. For questions or support, open an issue in the [Still repository](https://github.com/ashishsahu89/still-focus-extension/issues).
+We may update this policy when Still's behavior changes. The effective date above will change with a new version. For questions or support, open an issue in the [Still repository](https://github.com/ashishsahu89/Still-Extension/issues).
