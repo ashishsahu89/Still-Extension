@@ -23,8 +23,8 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 
 - Working directory: `/Users/swatikeshri/Documents/Playground/still-focus-extension`
 - Current branch: `main`
-- Latest committed change: `13f7a47 Improve deterministic tab group names`
-- The worktree currently contains release-preparation changes (privacy policy, store listing draft, packaging script, and version bump) that are intentionally not committed yet.
+- Latest committed change: `86fef97 Use canonical repository links`
+- The worktree is clean after the Chrome Web Store release-preparation commits.
 
 ## Product decisions
 
@@ -138,10 +138,12 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 - `npm run package:extension` creates a clean `dist/still-focus-extension-v<version>.zip` containing only runtime files and icons. `dist/` is ignored by Git.
 - The existing 1440 × 900 intervention render is a valid screenshot candidate, and `assets/promo-tile-440x280.png` is ready for the dashboard. The editable source is `assets/promo-tile.svg`.
 
-## Latest fixes not yet committed
+## Latest release-preparation commits
 
-- Added the public privacy policy and Chrome Web Store listing/reviewer draft.
-- Added a clean packaging script and bumped the manifest to `0.9.1`.
+- Added the public privacy policy and Chrome Web Store listing/reviewer draft (`faaab20`).
+- Added a clean packaging script and bumped the manifest to `0.9.1` (`faaab20`).
+- Added the 440 × 280 promotional tile and editable source (`37a0589`).
+- Updated links to the canonical moved repository (`86fef97`).
 
 ## Verification status
 
@@ -169,8 +171,8 @@ Run `npm run test:all` after meaningful feature or behavior changes. If the Play
 
 ## Immediate next step
 
-1. Commit and push the release-preparation files so the privacy-policy URL is publicly reachable.
-2. Upload `dist/still-focus-extension-v0.9.1.zip` in the Chrome Web Store dashboard, add the prepared promo tile and screenshot, complete the Privacy and Distribution tabs, and start with Unlisted distribution.
+1. Upload `dist/still-focus-extension-v0.9.1.zip` in the Chrome Web Store dashboard, add the prepared promo tile and screenshot, complete the Privacy and Distribution tabs, and start with Unlisted distribution.
+2. Verify the unpacked-store build in a clean Chrome profile before submitting the listing for review.
 
 ## Known limitations and open questions
 
