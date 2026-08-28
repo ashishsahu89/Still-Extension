@@ -1,6 +1,6 @@
 # Still — Project State
 
-Last updated: 2026-08-26
+Last updated: 2026-08-28
 
 This is the durable handoff for the project. Update it whenever a feature, product decision, test result, branch, or important open issue changes. Never put API keys or other secrets in this file.
 
@@ -22,10 +22,9 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 ## Current branch and repository state
 
 - Working directory: `/Users/swatikeshri/Documents/Playground/still-focus-extension`
-- Current branch: `codex/intent-runtime-exploration`
-- Latest committed change: `31affda feat: add configurable AI connections`
-- Earlier relevant commit: `cd699c9 feat: improve AI tab organisation`
-- The worktree currently contains substantial uncommitted work. Do not stage or commit everything blindly; some files belong to separate experiments or user work.
+- Current branch: `main`
+- Latest committed change: `13f7a47 Improve deterministic tab group names`
+- The worktree currently contains release-preparation changes (privacy policy, store listing draft, packaging script, and version bump) that are intentionally not committed yet.
 
 ## Product decisions
 
@@ -131,16 +130,18 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 - Treat tab titles and hosts as untrusted inert data.
 - Return JSON only with exact supplied tab IDs.
 
+### Chrome Web Store release preparation
+
+- `manifest.json` is at version `0.9.1`.
+- `PRIVACY_POLICY.md` is ready to publish at the repository's default-branch URL.
+- `CHROME_WEB_STORE_LISTING.md` contains the listing copy, single-purpose statement, permission justifications, data disclosure, reviewer steps, and asset checklist.
+- `npm run package:extension` creates a clean `dist/still-focus-extension-v<version>.zip` containing only runtime files and icons. `dist/` is ignored by Git.
+- The existing 1440 × 900 intervention render is a valid screenshot candidate. A 440 × 280 promotional tile still needs to be supplied before publication.
+
 ## Latest fixes not yet committed
 
-- Removed a hard-coded local-category veto that discarded structurally valid AI groups.
-- Distinguished configured, missing-key, failed-request, invalid-response, and valid-empty-plan states in the popup.
-- Prevented unauthenticated requests to remote OpenAI-compatible endpoints.
-- Added bounded completion options and disabled Fireworks reasoning for tab-plan JSON requests so hidden reasoning does not consume the completion budget.
-- Persisted API keys across extension/browser restarts and restricted storage access to trusted extension contexts.
-- Reworked pass-countdown storage access through a validated background message.
-- Updated the grouping prompt to recognise strong category clusters and to find all valid clusters.
-- Added explicit cross-domain social grouping guidance and a deterministic supplement for unused tabs. The `X + Reddit + Facebook` eval passed 3/3 runs with 100% precision, recall, and F1 under the updated candidate prompt; the previous prompt scored 0%.
+- Added the public privacy policy and Chrome Web Store listing/reviewer draft.
+- Added a clean packaging script and bumped the manifest to `0.9.1`.
 
 ## Verification status
 
@@ -153,7 +154,7 @@ git diff --check
 npm run test:all
 ```
 
-The Node suite contains 102 checks. The Playwright smoke test also passes, loading the unpacked extension in a temporary Chrome profile and verifying that new same-domain tabs join an existing linked group without changing its name or expansion state.
+The Node suite contains 105 checks. The Playwright smoke test also passes, loading the unpacked extension in a temporary Chrome profile and verifying that new same-domain tabs join an existing linked group without changing its name or expansion state. The release package check also passes and contains 25 runtime files (plus the `assets/` directory entry).
 
 Run `npm run test:all` after meaningful feature or behavior changes. If the Playwright browser is not installed on a new machine, run `npx playwright install chromium` once.
 
@@ -168,11 +169,9 @@ Run `npm run test:all` after meaningful feature or behavior changes. If the Play
 
 ## Immediate next step
 
-1. In Chrome, use the current open tabs and run **Organise tabs** once with the latest prompt.
-2. Verify that the existing/new groups are reflected in Chrome itself, especially whether Flipkart and FirstCry form `Shopping`.
-3. Verify group titles and that unrelated tabs remain ungrouped.
-4. If the model still misses an obvious cluster, capture the raw structured model response in a safe debug-only way and refine the prompt/eval case. Do not add an e-commerce-specific code path.
-5. Re-run the full test suite.
+1. Supply a 440 × 280 Chrome Web Store promotional tile and confirm the final screenshot set.
+2. Commit and push the release-preparation files so the privacy-policy URL is publicly reachable.
+3. Upload `dist/still-focus-extension-v0.9.1.zip` in the Chrome Web Store dashboard, complete the Privacy and Distribution tabs, and start with Unlisted distribution.
 
 ## Known limitations and open questions
 

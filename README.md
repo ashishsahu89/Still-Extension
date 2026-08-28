@@ -19,6 +19,16 @@ Still is a private, local-first Chrome extension for interrupting autopilot brow
 
 No build step, account, server, or Chrome Web Store upload is required.
 
+## Chrome Web Store release prep
+
+The release materials live in [`CHROME_WEB_STORE_LISTING.md`](CHROME_WEB_STORE_LISTING.md), and the public policy is [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md). Create a clean upload ZIP with:
+
+```bash
+npm run package:extension
+```
+
+The ZIP is written to `dist/` (which is intentionally ignored by Git). It contains only the Manifest V3 runtime files and icons—no tests, source notes, secrets, or development dependencies.
+
 ## Development checks
 
 Install the development dependency once, then run the full regression suite after meaningful changes:
