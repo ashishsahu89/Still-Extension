@@ -136,7 +136,7 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 - `PRIVACY_POLICY.md` is ready to publish at the repository's default-branch URL.
 - `CHROME_WEB_STORE_LISTING.md` contains the listing copy, single-purpose statement, permission justifications, data disclosure, reviewer steps, and asset checklist.
 - `npm run package:extension` creates a clean `dist/still-focus-extension-v<version>.zip` containing only runtime files and icons. `dist/` is ignored by Git.
-- The existing 1440 × 900 intervention render is a valid screenshot candidate. A 440 × 280 promotional tile still needs to be supplied before publication.
+- The existing 1440 × 900 intervention render is a valid screenshot candidate, and `assets/promo-tile-440x280.png` is ready for the dashboard. The editable source is `assets/promo-tile.svg`.
 
 ## Latest fixes not yet committed
 
@@ -169,9 +169,8 @@ Run `npm run test:all` after meaningful feature or behavior changes. If the Play
 
 ## Immediate next step
 
-1. Supply a 440 × 280 Chrome Web Store promotional tile and confirm the final screenshot set.
-2. Commit and push the release-preparation files so the privacy-policy URL is publicly reachable.
-3. Upload `dist/still-focus-extension-v0.9.1.zip` in the Chrome Web Store dashboard, complete the Privacy and Distribution tabs, and start with Unlisted distribution.
+1. Commit and push the release-preparation files so the privacy-policy URL is publicly reachable.
+2. Upload `dist/still-focus-extension-v0.9.1.zip` in the Chrome Web Store dashboard, add the prepared promo tile and screenshot, complete the Privacy and Distribution tabs, and start with Unlisted distribution.
 
 ## Known limitations and open questions
 

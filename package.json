@@ -6,6 +6,7 @@
     "test": "node --test tests/*.test.mjs",
     "test:e2e": "playwright test",
     "test:all": "npm test && npm run test:e2e",
+    "render:promo-tile": "node scripts/render-promo-tile.mjs",
     "package:extension": "node scripts/package-extension.mjs"
   },
   "devDependencies": {

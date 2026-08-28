@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="280" viewBox="0 0 440 280" role="img" aria-labelledby="title description">
+  <title id="title">Still — Focus on purpose</title>
+  <desc id="description">A calm green promotional tile for the Still Chrome extension.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b322d"/>
+      <stop offset="1" stop-color="#294b40"/>
+    </linearGradient>
+    <filter id="soft-shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#10221e" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+
+  <rect width="440" height="280" rx="22" fill="url(#background)"/>
+  <circle cx="420" cy="18" r="104" fill="none" stroke="#7fa592" stroke-opacity="0.16" stroke-width="2"/>
+  <circle cx="420" cy="18" r="74" fill="none" stroke="#7fa592" stroke-opacity="0.12" stroke-width="2"/>
+  <circle cx="23" cy="278" r="90" fill="none" stroke="#7fa592" stroke-opacity="0.1" stroke-width="2"/>
+
+  <g filter="url(#soft-shadow)">
+    <circle cx="76" cy="82" r="38" fill="#f4efe3"/>
+    <circle cx="76" cy="82" r="27" fill="none" stroke="#496a51" stroke-width="4"/>
+    <path d="M76 95V75" fill="none" stroke="#496a51" stroke-width="4" stroke-linecap="round"/>
+    <path d="M75 78C65 78 59 71 59 62c10 0 16 5 17 13" fill="#496a51"/>
+    <path d="M77 78c10 0 16-7 16-16-10 0-16 5-17 13" fill="#496a51"/>
+  </g>
+
+  <text x="132" y="82" fill="#f4efe3" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="38" font-weight="650" letter-spacing="-1.1">Still</text>
+  <text x="134" y="112" fill="#c5d7cd" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="16" font-weight="500">Focus on purpose</text>
+
+  <g transform="translate(32 174)">
+    <rect width="112" height="52" rx="14" fill="#f4efe3" fill-opacity="0.12" stroke="#c5d7cd" stroke-opacity="0.25"/>
+    <circle cx="25" cy="26" r="9" fill="#d7b57b"/>
+    <text x="45" y="32" fill="#f4efe3" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15" font-weight="600">Pause</text>
+  </g>
+  <g transform="translate(164 174)">
+    <rect width="112" height="52" rx="14" fill="#f4efe3" fill-opacity="0.12" stroke="#c5d7cd" stroke-opacity="0.25"/>
+    <circle cx="25" cy="26" r="9" fill="#9cc4a4"/>
+    <text x="45" y="32" fill="#f4efe3" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15" font-weight="600">Focus</text>
+  </g>
+  <g transform="translate(296 174)">
+    <rect width="112" height="52" rx="14" fill="#f4efe3" fill-opacity="0.12" stroke="#c5d7cd" stroke-opacity="0.25"/>
+    <circle cx="25" cy="26" r="9" fill="#91b8d3"/>
+    <text x="45" y="32" fill="#f4efe3" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15" font-weight="600">Organise</text>
+  </g>
+</svg>

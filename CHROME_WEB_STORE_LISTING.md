@@ -90,5 +90,6 @@ Start with **Unlisted** distribution for review and a small pilot. Switch to **P
 
 - `assets/icon-128.png` — ready (128 × 128).
 - `assets/intervention-render-1440.png` — suitable screenshot (1440 × 900).
+- `assets/promo-tile-440x280.png` — ready (440 × 280).
 - Add at least one 1280 × 800 or 640 × 400 screenshot if the dashboard rejects the current render.
-- Add a 440 × 280 small promotional tile before publishing; the current popup render is 400 × 600 and is not a promo tile.
+- `assets/popup-render.png` is 400 × 600 and is not a promotional tile; use it only as an optional product image.
