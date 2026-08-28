@@ -19,6 +19,18 @@ Still is a private, local-first Chrome extension for interrupting autopilot brow
 
 No build step, account, server, or Chrome Web Store upload is required.
 
+## Development checks
+
+Install the development dependency once, then run the full regression suite after meaningful changes:
+
+```bash
+npm install
+npx playwright install chromium
+npm run test:all
+```
+
+`test:all` runs the local Node tests and a Playwright smoke test in a temporary Chrome profile. The browser test exercises the popup and native tab groups without touching the user's real tabs.
+
 ## Core flow
 
 1. Choose a focus duration and optionally name what matters.
@@ -35,7 +47,7 @@ When focus begins, Still also redirects protected sites that were already open a
 
 ## Tab organization
 
-The popup includes a one-click **Organise tabs** action. Still groups repeated websites and distinct cross-site categories such as Social, Shopping, Video, and News; an otherwise unclassified tab with a standalone `news` word in its title also qualifies for News. It avoids collapsing broad Work, Research, or Learning sets into one generic group. New bulk groups start collapsed at the end of the tab strip and offer an undo action. Still combines these conservative local rules with the active external model or Chrome's on-device model, which must provide a specific workstream rather than a generic title such as Work.
+The popup includes a one-click **Organise tabs** action. Still groups repeated websites and distinct cross-site categories such as Social, Shopping, Video, and News; an otherwise unclassified tab with a standalone `news` word in its title also qualifies for News. It avoids collapsing broad Work, Research, or Learning sets into one generic group. Matching ungrouped tabs join an existing automatically named group, including a linked-tab group when every added tab matches that group's source domain; groups that have been renamed are left alone. New bulk groups are appended after existing groups, start collapsed except for the group containing the active tab, and offer an undo action. Still combines these conservative local rules with the active external model or Chrome's on-device model, which must provide a specific workstream rather than a generic title such as Work.
 
 Still can also keep linked tabs together while you browse. When a link opens in a new tab, Still creates an open group beside its source tab so the browsing flow remains visible. These groups:
 

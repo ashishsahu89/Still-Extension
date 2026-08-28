@@ -1444,7 +1444,10 @@ function normalizedTabOrganizerState(value = {}) {
       ? undo.groups
           .map((group) => ({
             groupId: Number(group?.groupId),
-            tabIds: (Array.isArray(group?.tabIds) ? group.tabIds : []).filter(Number.isInteger)
+            tabIds: (Array.isArray(group?.tabIds) ? group.tabIds : []).filter(Number.isInteger),
+            // Older undo entries represented only newly created groups. Treat
+            // missing `created` as true for backwards compatibility.
+            created: group?.created !== false
           }))
           .filter((group) => group.groupId >= 0 && group.tabIds.length)
       : [];
@@ -1510,6 +1513,65 @@ function bulkGroupInsertionIndex(tabs = []) {
     .filter(Number.isInteger)
     .sort((left, right) => left - right)[0];
   return Number.isInteger(firstUnpinnedIndex) ? firstUnpinnedIndex : 0;
+}
+
+function normalizedGroupTitle(value) {
+  return safeText(value, 60).replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function tabHost(tab) {
+  const urlHost = globalThis.StillTabOrganizer.hostFromUrl(
+    tab?.url || tab?.pendingUrl || ""
+  );
+  if (urlHost) return urlHost;
+  const rawHost = String(tab?.host || "").trim();
+  return rawHost
+    ? globalThis.StillTabOrganizer.hostFromUrl(`https://${rawHost}`)
+    : "";
+}
+
+function linkedGroupSourceHost(group, groupTabs, state) {
+  const groupId = Number(group?.id);
+  const metadata = state.managedGroups[groupId];
+  if (metadata?.kind !== "linkTrail" || metadata.manualName) return "";
+  const sourceHost = globalThis.StillTabOrganizer.hostFromUrl(metadata.sourceHost) ||
+    String(metadata.sourceHost || "").replace(/^www\./, "").toLowerCase();
+  if (!sourceHost || !groupTabs.some((tab) => tabHost(tab) === sourceHost)) return "";
+  return sourceHost;
+}
+
+function linkedGroupAcceptsTabs(group, groupTabs, candidateTabs, state) {
+  const sourceHost = linkedGroupSourceHost(group, groupTabs, state);
+  return Boolean(
+    sourceHost &&
+    Array.isArray(candidateTabs) &&
+    candidateTabs.length &&
+    candidateTabs.every((tab) => tabHost(tab) === sourceHost)
+  );
+}
+
+function canMergeIntoExistingGroup(group, groupTabs, state, categoryOverrides = {}) {
+  const groupId = Number(group?.id);
+  const title = normalizedGroupTitle(group?.title);
+  if (
+    !Number.isInteger(groupId) ||
+    !title ||
+    /^(?:related tabs?|misc|other|general)$/.test(title) ||
+    !groupTabs.length
+  ) return false;
+  const metadata = state.managedGroups[groupId];
+  // Linked groups can accept same-domain tabs from bulk organization, but keep
+  // their trail identity and remain protected after a manual rename.
+  if (metadata?.kind === "linkTrail") {
+    return Boolean(linkedGroupSourceHost(group, groupTabs, state));
+  }
+  if (metadata?.manualName) return false;
+  const expectedTitles = metadata
+    ? [metadata.autoName, metadata.semanticName]
+    : [globalThis.StillTabOrganizer.nameForTabs(groupTabs, categoryOverrides)];
+  return expectedTitles
+    .filter(Boolean)
+    .some((expected) => normalizedGroupTitle(expected) === title);
 }
 
 async function tabsInGroup(groupId) {
@@ -1756,7 +1818,12 @@ async function organizeTabsInWindow(windowId, categoryOverrides = {}, tabPlans =
   if (!chrome.tabs.group || !chrome.tabGroups?.update) {
     return { ok: false, reason: "tab-groups-unavailable" };
   }
-  const tabs = await chrome.tabs.query({ windowId });
+  const [tabs, existingTabGroups] = await Promise.all([
+    chrome.tabs.query({ windowId }),
+    chrome.tabGroups?.query
+      ? chrome.tabGroups.query({ windowId }).catch(() => [])
+      : Promise.resolve([])
+  ]);
   const explicitPlans = Array.isArray(tabPlans)
     ? globalThis.StillTabOrganizer.plansForExplicitGroups(tabs, tabPlans)
     : null;
@@ -1784,15 +1851,66 @@ async function organizeTabsInWindow(windowId, categoryOverrides = {}, tabPlans =
     plans = [...explicitPlans, ...supplementalPlans]
       .sort((left, right) => left.tabs[0].index - right.tabs[0].index);
   }
-  if (!plans.length) {
-    return { ok: true, groups: [], message: "Nothing to organise yet.", usedLocalFallback };
+  const state = await getTabOrganizerState();
+  const tabsByGroup = new Map();
+  for (const tab of tabs) {
+    if (!Number.isInteger(tab?.groupId) || tab.groupId === TAB_GROUP_NONE) continue;
+    const members = tabsByGroup.get(tab.groupId) || [];
+    members.push(tab);
+    tabsByGroup.set(tab.groupId, members);
+  }
+  const mergeableGroups = (Array.isArray(existingTabGroups) ? existingTabGroups : [])
+    .filter((group) => canMergeIntoExistingGroup(
+      group,
+      tabsByGroup.get(Number(group?.id)) || [],
+      state,
+      categoryOverrides
+    ))
+    .sort((left, right) => Number(left.id) - Number(right.id));
+  const changed = [];
+  const activeTabId = tabs.find((tab) => tab.active)?.id;
+  const plannedTabIds = new Set(plans.flatMap((plan) => plan.tabs.map((tab) => tab.id)));
+  let insertionIndex = bulkGroupInsertionIndex(tabs);
+
+  // A single ungrouped tab is normally left alone by the local organizer, but
+  // an exact match to an unchanged existing group is strong enough evidence to
+  // place it there.
+  for (const tab of tabs.filter((candidate) =>
+    Number.isInteger(candidate?.groupId) && candidate.groupId === TAB_GROUP_NONE &&
+    globalThis.StillTabOrganizer.isOrganizable(candidate) && !plannedTabIds.has(candidate.id)
+  )) {
+    const mergeTarget = mergeableGroups.find((group) => {
+      const groupTabs = tabsByGroup.get(Number(group.id)) || [];
+      if (linkedGroupAcceptsTabs(group, groupTabs, [tab], state)) return true;
+      const proposedTitle = globalThis.StillTabOrganizer.nameForTabs(
+        [...groupTabs, tab],
+        categoryOverrides
+      );
+      return normalizedGroupTitle(group.title) === normalizedGroupTitle(proposedTitle);
+    });
+    if (!mergeTarget) continue;
+    await chrome.tabs.group({ groupId: Number(mergeTarget.id), tabIds: [tab.id] });
+    changed.push({ groupId: Number(mergeTarget.id), tabIds: [tab.id], created: false });
   }
 
-  const state = await getTabOrganizerState();
-  const created = [];
-  const activeTabId = tabs.find((tab) => tab.active)?.id;
-  let insertionIndex = bulkGroupInsertionIndex(tabs);
   for (const plan of plans) {
+    const mergeTarget = mergeableGroups.find((group) => {
+      const groupTabs = tabsByGroup.get(Number(group.id)) || [];
+      if (linkedGroupAcceptsTabs(group, groupTabs, plan.tabs, state)) return true;
+      return normalizedGroupTitle(group.title) === normalizedGroupTitle(plan.title);
+    });
+    if (mergeTarget) {
+      await chrome.tabs.group({
+        groupId: Number(mergeTarget.id),
+        tabIds: plan.tabs.map((tab) => tab.id)
+      });
+      changed.push({
+        groupId: Number(mergeTarget.id),
+        tabIds: plan.tabs.map((tab) => tab.id),
+        created: false
+      });
+      continue;
+    }
     const groupId = await chrome.tabs.group({ tabIds: plan.tabs.map((tab) => tab.id) });
     const color = await colorForTabGroup(plan.tabs, plan.color);
     // Keep the group containing the tab the user is viewing open so they can
@@ -1814,23 +1932,41 @@ async function organizeTabsInWindow(windowId, categoryOverrides = {}, tabPlans =
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
-    created.push({ groupId, tabIds: plan.tabs.map((tab) => tab.id) });
+    changed.push({ groupId, tabIds: plan.tabs.map((tab) => tab.id), created: true });
+  }
+  if (!changed.length) {
+    return { ok: true, groups: [], message: "Nothing to organise yet.", usedLocalFallback };
   }
   // Place bulk groups after the existing group area. If there are no existing
   // groups, this is the first unpinned tab, keeping organized groups on the
   // left while preserving pinned tabs at the front.
-  for (const group of created) {
+  for (const group of changed.filter((item) => item.created)) {
     await safeTabGroupMove(group.groupId, insertionIndex);
     insertionIndex += group.tabIds.length || 1;
   }
-  state.undoByWindow[windowId] = { groups: created, createdAt: Date.now() };
+  state.undoByWindow[windowId] = { groups: changed, createdAt: Date.now() };
   await saveTabOrganizerState(state);
   const groups = await Promise.all(
-    created.map(async ({ groupId }) =>
-      globalThis.StillTabOrganizer.groupPayload(groupId, await tabsInGroup(groupId), state.managedGroups[groupId].autoName)
-    )
+    changed.map(async ({ groupId }) => {
+      const metadata = state.managedGroups[groupId];
+      const existingGroup = existingTabGroups.find((group) => Number(group?.id) === groupId);
+      const fallbackName = metadata?.autoName || existingGroup?.title || "Related tabs";
+      return globalThis.StillTabOrganizer.groupPayload(
+        groupId,
+        await tabsInGroup(groupId),
+        fallbackName
+      );
+    })
   );
-  return { ok: true, groups, undoAvailable: true, usedLocalFallback };
+  const newGroups = groups.filter((_group, index) => changed[index].created);
+  return {
+    ok: true,
+    groups,
+    newGroups,
+    undoAvailable: true,
+    mergedGroups: changed.filter((item) => !item.created).map((item) => item.groupId),
+    usedLocalFallback
+  };
 }
 
 async function undoTabOrganization(windowId) {
@@ -1838,12 +1974,12 @@ async function undoTabOrganization(windowId) {
   const state = await getTabOrganizerState();
   const undo = state.undoByWindow[windowId];
   if (!undo?.groups?.length) return { ok: false, reason: "nothing-to-undo" };
-  for (const { groupId, tabIds } of undo.groups) {
+  for (const { groupId, tabIds, created = true } of undo.groups) {
     const currentTabs = await tabsInGroup(groupId);
     const currentIds = new Set(currentTabs.map((tab) => tab.id));
     const ownedIds = tabIds.filter((tabId) => currentIds.has(tabId));
     if (ownedIds.length) await chrome.tabs.ungroup(ownedIds);
-    delete state.managedGroups[groupId];
+    if (created) delete state.managedGroups[groupId];
   }
   delete state.undoByWindow[windowId];
   await saveTabOrganizerState(state);

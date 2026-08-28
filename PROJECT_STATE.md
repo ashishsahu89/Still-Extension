@@ -84,7 +84,7 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 - Automatic system light/dark mode.
 - AI connection settings for OpenAI-compatible APIs, Ollama, LM Studio, and browser-provided on-device intelligence.
 - One-click tab grouping through Chrome tab groups.
-- Bulk-organized tab groups start collapsed and are appended after existing groups, while preserving their relative order. Linked-tab groups stay open beside their source tab.
+- Bulk-organized tab groups are appended after existing groups, while preserving their relative order. The group containing the active tab stays open for orientation; other new groups start collapsed. Matching ungrouped tabs join an existing automatically named group, including a linked-tab group when every added tab matches that group's source domain; renamed groups are left alone. Linked-tab groups stay open beside their source tab.
 - Parent/child linked-tab grouping.
 - Automatic removal of a managed group when only one tab remains.
 - Dynamic automatic group naming as group membership changes.
@@ -150,9 +150,12 @@ Latest automated verification passed:
 node --check popup.js
 node --test --test-reporter=dot tests/*.test.mjs
 git diff --check
+npm run test:all
 ```
 
-The wider syntax/test run for the affected AI, background, options, popup, pass-countdown, and organiser files also passed. The current suite contains 77 automated checks.
+The Node suite contains 102 checks. The Playwright smoke test also passes, loading the unpacked extension in a temporary Chrome profile and verifying that new same-domain tabs join an existing linked group without changing its name or expansion state.
+
+Run `npm run test:all` after meaningful feature or behavior changes. If the Playwright browser is not installed on a new machine, run `npx playwright install chromium` once.
 
 ### Real Chrome testing
 

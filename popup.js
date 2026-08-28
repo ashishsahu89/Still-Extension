@@ -584,7 +584,7 @@ $("#organize-tabs").addEventListener("click", async () => {
       : `Organised ${response.groups.length} ${groupWord} with local categories.`
   );
   $("#undo-tab-organization").hidden = !response.undoAvailable;
-  if (!smartPlan?.plans) await offerSmartNames(response.groups);
+  if (!smartPlan?.plans) await offerSmartNames(response.newGroups || response.groups);
   await renderTabOrganizer();
 });
 

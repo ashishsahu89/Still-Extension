@@ -42,6 +42,7 @@ async function settle() {
 
 function createHarness({
   initialState = {},
+  initialSessionState = {},
   tabs = [],
   initialNow = 1_800_000_000_000,
   initialFocusedWindowId = 1,
@@ -54,7 +55,7 @@ function createHarness({
   let idleState = initialIdleState;
   const tabState = clone(tabs);
   const state = clone(initialState);
-  const sessionState = {};
+  const sessionState = clone(initialSessionState);
   const updates = [];
   const tabGroupMoves = [];
   const alarms = new Map();
@@ -1536,6 +1537,195 @@ test("keeps the active tab's new bulk group open for orientation", async () => {
   assert.equal(organised.ok, true);
   assert.equal(organised.groups.length, 1);
   assert.equal(harness.tabGroups.get(1).collapsed, false);
+});
+
+test("adds matching ungrouped tabs to an unchanged existing group and undoes only the additions", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: false, groupId: 7, url: "https://github.com/openai", title: "GitHub" },
+      { id: 2, windowId: 1, index: 1, active: false, groupId: 7, url: "https://github.com/openai/still", title: "Still" },
+      { id: 3, windowId: 1, index: 2, active: true, groupId: -1, url: "https://github.com/openai/docs", title: "Docs" },
+      { id: 4, windowId: 1, index: 3, active: false, groupId: -1, url: "https://github.com/openai/issues", title: "Issues" }
+    ]
+  });
+  harness.tabGroups.set(7, { id: 7, windowId: 1, title: "GitHub", color: "blue", collapsed: true });
+  await settle();
+
+  const organised = await harness.send({ type: "ORGANIZE_TABS" });
+  assert.equal(organised.ok, true);
+  assert.deepEqual(Array.from(organised.mergedGroups), [7]);
+  assert.deepEqual(harness.tabGroupMoves, []);
+  assert.deepEqual(harness.tabs.filter((tab) => tab.groupId === 7).map((tab) => tab.id), [1, 2, 3, 4]);
+  assert.equal(harness.tabGroups.get(7).title, "GitHub");
+
+  const undone = await harness.send({ type: "UNDO_TAB_ORGANIZATION" });
+  assert.equal(undone.ok, true);
+  assert.deepEqual(harness.tabs.filter((tab) => tab.groupId === 7).map((tab) => tab.id), [1, 2]);
+  assert.deepEqual(harness.tabs.filter((tab) => tab.groupId === -1).map((tab) => tab.id), [3, 4]);
+});
+
+test("merges a single exact-match tab into an unchanged existing group", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: false, groupId: 7, url: "https://github.com/openai", title: "GitHub" },
+      { id: 2, windowId: 1, index: 1, active: true, groupId: -1, url: "https://github.com/openai/docs", title: "Docs" },
+      { id: 3, windowId: 1, index: 2, active: false, groupId: -1, url: "https://example.com/", title: "Unrelated" }
+    ]
+  });
+  harness.tabGroups.set(7, { id: 7, windowId: 1, title: "GitHub", color: "blue", collapsed: true });
+  await settle();
+
+  const organised = await harness.send({ type: "ORGANIZE_TABS" });
+  assert.equal(organised.ok, true);
+  assert.deepEqual(Array.from(organised.mergedGroups), [7]);
+  assert.equal(harness.tabs.find((tab) => tab.id === 2).groupId, 7);
+  assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, -1);
+});
+
+test("merges same-domain tabs into an unchanged linked group and undoes only the additions", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    initialSessionState: {
+      tabOrganizerState: {
+        managedGroups: {
+          8: {
+            windowId: 1,
+            kind: "linkTrail",
+            sourceHost: "economictimes.indiatimes.com",
+            autoName: "🔗 Economictimes",
+            manualName: false,
+            color: "green"
+          }
+        }
+      }
+    },
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: false, groupId: 8, url: "https://economictimes.indiatimes.com/", title: "Business News" },
+      { id: 2, windowId: 1, index: 1, active: false, groupId: 8, url: "https://economictimes.indiatimes.com/news/markets", title: "Markets" },
+      { id: 3, windowId: 1, index: 2, active: true, groupId: -1, url: "https://economictimes.indiatimes.com/news/defence", title: "Defence" },
+      { id: 4, windowId: 1, index: 3, active: false, groupId: -1, url: "https://www.economictimes.indiatimes.com/news/politics", title: "Politics" },
+      { id: 5, windowId: 1, index: 4, active: false, groupId: -1, url: "https://reddit.com/r/news", title: "Reddit" },
+      { id: 6, windowId: 1, index: 5, active: false, groupId: -1, url: "https://www.reddit.com/r/worldnews", title: "World news" }
+    ]
+  });
+  harness.tabGroups.set(8, {
+    id: 8,
+    windowId: 1,
+    title: "🔗 Economictimes",
+    color: "green",
+    collapsed: true
+  });
+  await settle();
+
+  const organised = await harness.send({ type: "ORGANIZE_TABS" });
+  assert.equal(organised.ok, true);
+  assert.deepEqual(Array.from(organised.mergedGroups), [8]);
+  assert.deepEqual(harness.tabs.filter((tab) => tab.groupId === 8).map((tab) => tab.id), [1, 2, 3, 4]);
+  assert.deepEqual(harness.tabs.filter((tab) => tab.groupId === 1).map((tab) => tab.id), [5, 6]);
+  assert.equal(harness.tabGroups.get(8).title, "🔗 Economictimes");
+  assert.equal(harness.tabGroups.get(8).collapsed, true);
+
+  const undone = await harness.send({ type: "UNDO_TAB_ORGANIZATION" });
+  assert.equal(undone.ok, true);
+  assert.deepEqual(harness.tabs.filter((tab) => tab.groupId === 8).map((tab) => tab.id), [1, 2]);
+  assert.deepEqual(harness.tabs.filter((tab) => tab.groupId === -1).map((tab) => tab.id), [3, 4, 5, 6]);
+});
+
+test("does not merge into a manually renamed linked group", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    initialSessionState: {
+      tabOrganizerState: {
+        managedGroups: {
+          8: {
+            windowId: 1,
+            kind: "linkTrail",
+            sourceHost: "economictimes.indiatimes.com",
+            autoName: "Reading",
+            manualName: true,
+            color: "green"
+          }
+        }
+      }
+    },
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: false, groupId: 8, url: "https://economictimes.indiatimes.com/", title: "Business News" },
+      { id: 2, windowId: 1, index: 1, active: true, groupId: -1, url: "https://economictimes.indiatimes.com/news/markets", title: "Markets" },
+      { id: 3, windowId: 1, index: 2, active: false, groupId: -1, url: "https://economictimes.indiatimes.com/news/defence", title: "Defence" }
+    ]
+  });
+  harness.tabGroups.set(8, {
+    id: 8,
+    windowId: 1,
+    title: "Reading",
+    color: "green",
+    collapsed: false
+  });
+  await settle();
+
+  const organised = await harness.send({ type: "ORGANIZE_TABS" });
+  assert.equal(organised.ok, true);
+  assert.deepEqual(Array.from(organised.mergedGroups), []);
+  assert.deepEqual(harness.tabs.filter((tab) => tab.groupId === 8).map((tab) => tab.id), [1]);
+  assert.deepEqual(harness.tabs.filter((tab) => tab.groupId === 1).map((tab) => tab.id), [2, 3]);
+  assert.equal(harness.tabGroups.get(8).title, "Reading");
+});
+
+test("leaves a renamed existing group alone and creates a separate matching group", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: false, groupId: 7, url: "https://github.com/openai", title: "GitHub" },
+      { id: 2, windowId: 1, index: 1, active: true, groupId: -1, url: "https://github.com/openai/docs", title: "Docs" },
+      { id: 3, windowId: 1, index: 2, active: false, groupId: -1, url: "https://github.com/openai/issues", title: "Issues" }
+    ]
+  });
+  harness.tabGroups.set(7, { id: 7, windowId: 1, title: "My project", color: "blue", collapsed: false });
+  await settle();
+
+  const organised = await harness.send({ type: "ORGANIZE_TABS" });
+  assert.equal(organised.ok, true);
+  assert.deepEqual(Array.from(organised.mergedGroups), []);
+  assert.equal(organised.groups.length, 1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, 7);
+  assert.equal(harness.tabs.find((tab) => tab.id === 2).groupId, 1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, 1);
+  assert.equal(harness.tabGroups.get(7).title, "My project");
+});
+
+test("respects Still's manual-name marker even when the current title matches", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    initialSessionState: {
+      tabOrganizerState: {
+        managedGroups: {
+          7: {
+            windowId: 1,
+            kind: "bulk",
+            autoName: "GitHub",
+            manualName: true,
+            color: "blue"
+          }
+        }
+      }
+    },
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: false, groupId: 7, url: "https://github.com/openai", title: "GitHub" },
+      { id: 2, windowId: 1, index: 1, active: true, groupId: -1, url: "https://github.com/openai/docs", title: "Docs" },
+      { id: 3, windowId: 1, index: 2, active: false, groupId: -1, url: "https://github.com/openai/issues", title: "Issues" }
+    ]
+  });
+  harness.tabGroups.set(7, { id: 7, windowId: 1, title: "GitHub", color: "blue", collapsed: false });
+  await settle();
+
+  const organised = await harness.send({ type: "ORGANIZE_TABS" });
+  assert.equal(organised.ok, true);
+  assert.deepEqual(Array.from(organised.mergedGroups), []);
+  assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, 7);
+  assert.equal(harness.tabs.find((tab) => tab.id === 2).groupId, 1);
+  assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, 1);
 });
 
 test("bulk organization inserts after existing groups instead of after ordinary tabs", async () => {
