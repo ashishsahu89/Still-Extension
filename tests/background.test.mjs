@@ -1584,6 +1584,27 @@ test("merges a single exact-match tab into an unchanged existing group", async (
   assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, -1);
 });
 
+test("new emoji category names still merge into a legacy automatic category group", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: false, groupId: 7, url: "https://x.com/home", title: "X" },
+      { id: 2, windowId: 1, index: 1, active: false, groupId: 7, url: "https://reddit.com/", title: "Reddit" },
+      { id: 3, windowId: 1, index: 2, active: true, groupId: -1, url: "https://facebook.com/", title: "Facebook" },
+      { id: 4, windowId: 1, index: 3, active: false, groupId: -1, url: "https://instagram.com/", title: "Instagram" }
+    ]
+  });
+  harness.tabGroups.set(7, { id: 7, windowId: 1, title: "Social", color: "blue", collapsed: true });
+  await settle();
+
+  const organised = await harness.send({ type: "ORGANIZE_TABS" });
+
+  assert.equal(organised.ok, true);
+  assert.deepEqual(Array.from(organised.mergedGroups), [7]);
+  assert.deepEqual(harness.tabs.filter((tab) => tab.groupId === 7).map((tab) => tab.id), [1, 2, 3, 4]);
+  assert.equal(harness.tabGroups.get(7).title, "Social");
+});
+
 test("merges same-domain tabs into an unchanged linked group and undoes only the additions", async () => {
   const harness = createHarness({
     initialState: baseState(),
@@ -1974,7 +1995,7 @@ test("organisation recognizes News in titles from otherwise unclassified sites",
 
   assert.equal(organised.ok, true);
   assert.equal(organised.groups.length, 1);
-  assert.equal(harness.tabGroups.get(1).title, "News");
+  assert.equal(harness.tabGroups.get(1).title, "📰 News");
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, 1);
   assert.equal(harness.tabs.find((tab) => tab.id === 2).groupId, 1);
   assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, -1);
@@ -2049,7 +2070,7 @@ test("organisation supplements an empty AI plan with an obvious cross-domain Soc
   assert.equal(organised.ok, true);
   assert.equal(organised.usedLocalFallback, true);
   assert.equal(organised.groups.length, 1);
-  assert.equal(harness.tabGroups.get(1).title, "Social");
+  assert.equal(harness.tabGroups.get(1).title, "💬 Social");
   assert.equal(harness.tabGroups.get(1).collapsed, false);
   assert.deepEqual(
     harness.tabs.filter((tab) => tab.groupId === 1).map((tab) => tab.id),
@@ -2118,7 +2139,7 @@ test("organisation falls back to obvious local groups when every explicit AI pla
   assert.equal(organised.ok, true);
   assert.equal(organised.usedLocalFallback, true);
   assert.equal(organised.groups.length, 1);
-  assert.equal(harness.tabGroups.get(1).title, "Social");
+  assert.equal(harness.tabGroups.get(1).title, "💬 Social");
   assert.equal(harness.tabs.find((tab) => tab.id === 1).groupId, 1);
   assert.equal(harness.tabs.find((tab) => tab.id === 2).groupId, 1);
   assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, -1);

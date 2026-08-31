@@ -45,3 +45,27 @@ test("keeps separate subdomains in separate groups with distinct names", () => {
     ["Salesforce · Planview", "LeanKit · Planview"]
   );
 });
+
+test("adds recognizable emoji only to deterministic cross-site category groups", () => {
+  const cases = [
+    ["📰 News", "https://theguardian.com/", "https://reuters.com/"],
+    ["🛍️ Shopping", "https://amazon.com/", "https://etsy.com/"],
+    ["💬 Social", "https://reddit.com/", "https://x.com/"],
+    ["🎬 Video", "https://youtube.com/", "https://vimeo.com/"]
+  ];
+
+  for (const [expected, firstUrl, secondUrl] of cases) {
+    assert.equal(
+      organizer.nameForTabs([tab(1, firstUrl), tab(2, secondUrl)]),
+      expected
+    );
+  }
+
+  assert.equal(
+    organizer.nameForLinkedTabs([
+      tab(1, "https://youtube.com/watch?v=one"),
+      tab(2, "https://youtube.com/watch?v=two")
+    ], "youtube.com"),
+    "🔗 YouTube"
+  );
+});

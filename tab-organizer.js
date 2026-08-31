@@ -25,6 +25,12 @@
   const CATCH_ALL_GROUP_TITLE = /^(related tabs?|misc|other|general)$/i;
   const GENERIC_WORKSTREAM_TITLE = /^(work|research|learning)$/i;
   const CROSS_SITE_CATEGORY_NAMES = new Set(["Social", "Video", "News", "Shopping"]);
+  const CATEGORY_GROUP_TITLES = Object.freeze({
+    News: "📰 News",
+    Shopping: "🛍️ Shopping",
+    Social: "💬 Social",
+    Video: "🎬 Video"
+  });
   const LINKED_TAB_PREFIX = "🔗 ";
   const GENERIC_HOST_LABELS = new Set([
     "www",
@@ -207,7 +213,7 @@
       categories.every((value) => value === categories[0])
       ? categories[0]
       : "";
-    if (category) return category;
+    if (category) return CATEGORY_GROUP_TITLES[category] || category;
     return "Related tabs";
   }
 

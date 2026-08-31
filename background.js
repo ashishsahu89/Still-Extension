@@ -1516,7 +1516,11 @@ function bulkGroupInsertionIndex(tabs = []) {
 }
 
 function normalizedGroupTitle(value) {
-  return safeText(value, 60).replace(/\s+/g, " ").trim().toLowerCase();
+  return safeText(value, 60)
+    .replace(/^(?:📰|🛍️?|💬|🎬)\s+/u, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 function tabHost(tab) {

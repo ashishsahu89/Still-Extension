@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Still — Focus & Tab Organizer",
   "short_name": "Still",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "minimum_chrome_version": "102",
   "description": "Stay intentional online: pause distracting sites, protect focus, and organize open tabs locally.",
   "permissions": [
