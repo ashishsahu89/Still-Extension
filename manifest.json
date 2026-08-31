@@ -1,9 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Still — Focus on purpose",
-  "version": "0.9.1",
+  "name": "Still — Focus & Tab Organizer",
+  "short_name": "Still",
+  "version": "0.9.2",
   "minimum_chrome_version": "102",
-  "description": "Pause autopilot browsing, choose your intention, and protect focused time.",
+  "description": "Stay intentional online: pause distracting sites, protect focus, and organize open tabs locally.",
   "permissions": [
     "alarms",
     "declarativeNetRequest",

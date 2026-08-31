@@ -2,7 +2,7 @@
 
 **Effective date: August 28, 2026**
 
-Still — Focus on purpose is a Chrome extension for intentional browsing, focus sessions, insights, routines, and tab organization. This policy describes what Still stores, what it sends, and the controls available to you.
+Still — Focus & Tab Organizer is a Chrome extension for intentional browsing, focus sessions, insights, routines, and tab organization. This policy describes what Still stores, what it sends, and the controls available to you.
 
 ## The short version
 

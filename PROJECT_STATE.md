@@ -132,7 +132,7 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 
 ### Chrome Web Store release preparation
 
-- `manifest.json` is at version `0.9.1`.
+- `manifest.json` is at version `0.9.2` with the Store-facing name `Still — Focus & Tab Organizer` and compact name `Still`.
 - `PRIVACY_POLICY.md` is ready to publish at the repository's default-branch URL.
 - `CHROME_WEB_STORE_LISTING.md` contains the listing copy, single-purpose statement, permission justifications, data disclosure, reviewer steps, and asset checklist.
 - `npm run package:extension` creates a clean `dist/still-focus-extension-v<version>.zip` containing only runtime files and icons. `dist/` is ignored by Git.
@@ -141,7 +141,7 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 ## Latest release-preparation commits
 
 - Added the public privacy policy and Chrome Web Store listing/reviewer draft (`faaab20`).
-- Added a clean packaging script and bumped the manifest to `0.9.1` (`faaab20`).
+- Added a clean packaging script and initially bumped the manifest to `0.9.1` (`faaab20`).
 - Added the 440 × 280 promotional tile and editable source (`37a0589`).
 - Updated links to the canonical moved repository (`86fef97`).
 
@@ -171,7 +171,7 @@ Run `npm run test:all` after meaningful feature or behavior changes. If the Play
 
 ## Immediate next step
 
-1. Upload `dist/still-focus-extension-v0.9.1.zip` in the Chrome Web Store dashboard, add the prepared promo tile and screenshot, complete the Privacy and Distribution tabs, and start with Unlisted distribution.
+1. Upload `dist/still-focus-extension-v0.9.2.zip` in the Chrome Web Store dashboard, add the prepared promo tile and screenshot, complete the Privacy and Distribution tabs, and start with Unlisted distribution.
 2. Verify the unpacked-store build in a clean Chrome profile before submitting the listing for review.
 
 ## Known limitations and open questions

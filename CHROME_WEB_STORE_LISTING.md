@@ -8,7 +8,7 @@ Use this copy in the Chrome Web Store dashboard. Keep the public privacy-policy 
 
 ### Name
 
-Still — Focus on purpose
+Still — Focus & Tab Organizer
 
 ### Short description
 
