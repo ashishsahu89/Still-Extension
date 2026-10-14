@@ -87,6 +87,8 @@ User experience is paramount. Still should feel calm, clear, private, and useful
 - Parent/child linked-tab grouping.
 - Automatic removal of a managed group when only one tab remains.
 - Dynamic automatic group naming as group membership changes.
+- All linked groups, including same-domain groups, use the configured AI connection for topic names and emoji. They retain their last AI name while an updated name is pending or fails, avoiding a flash back to the source-domain default. Groups without an AI result use the local source name. Regression tests cover same-site naming, pending updates after additions/removals, and failed requests.
+- AI naming and grouping prompts request a separate relevant emoji for each title. Still validates one emoji before prepending it; missing or invalid emoji leaves the title plain. Applies to remote and on-device bulk naming and remote linked-group renaming. Default linked names keep 🔗; deterministic category names keep their existing emoji.
 - External AI is preferred over Chrome built-in AI when a valid custom connection is active.
 - External AI connections can be disabled without deleting their saved configuration or key; disabled state persists across settings reloads.
 

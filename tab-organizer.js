@@ -32,6 +32,20 @@
     Video: "🎬 Video"
   });
   const LINKED_TAB_PREFIX = "🔗 ";
+  const SINGLE_EMOJI = /^(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|\p{Extended_Pictographic}[\uFE0F\u{1F3FB}-\u{1F3FF}]*(?:\u200D\p{Extended_Pictographic}[\uFE0F\u{1F3FB}-\u{1F3FF}]*)*)$/u;
+
+  function withoutGroupEmoji(value) {
+    const title = String(value || "").trim();
+    const [prefix] = title.split(/\s+/);
+    return SINGLE_EMOJI.test(prefix) ? title.slice(prefix.length).trim() : title;
+  }
+
+  function titleWithAIEmoji(value, emoji) {
+    const title = String(value || "").trim();
+    const symbol = typeof emoji === "string" ? emoji.trim() : "";
+    if (!title || symbol.length > 16 || !SINGLE_EMOJI.test(symbol)) return title;
+    return `${symbol} ${withoutGroupEmoji(title)}`.slice(0, 60);
+  }
   const GENERIC_HOST_LABELS = new Set([
     "www",
     "www2",
@@ -266,7 +280,8 @@
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 60);
-    return CATCH_ALL_GROUP_TITLE.test(title) || GENERIC_WORKSTREAM_TITLE.test(title) ? "" : title;
+    const plainTitle = withoutGroupEmoji(title);
+    return CATCH_ALL_GROUP_TITLE.test(plainTitle) || GENERIC_WORKSTREAM_TITLE.test(plainTitle) ? "" : title;
   }
 
   // Accept a model's proposed clusters only after resolving every tab id against
@@ -280,7 +295,7 @@
     if (!Array.isArray(groups)) return [];
 
     return groups.slice(0, 20).flatMap((group) => {
-      const title = safePlanTitle(group?.title);
+      const title = titleWithAIEmoji(safePlanTitle(group?.title), group?.emoji);
       if (!title || !Array.isArray(group?.tabIds)) return [];
       const groupTabIds = [...new Set(group.tabIds.filter(Number.isInteger))]
         .filter((tabId) => byId.has(tabId) && !usedTabIds.has(tabId));
@@ -317,6 +332,8 @@
     nameForTabs,
     normalizedTabs,
     plansForExplicitGroups,
-    plansForTabs
+    plansForTabs,
+    titleWithAIEmoji,
+    withoutGroupEmoji
   });
 })(typeof globalThis !== "undefined" ? globalThis : this);

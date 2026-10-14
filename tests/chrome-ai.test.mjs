@@ -227,7 +227,7 @@ test("names tab groups from bounded titles and ignores unrequested model output"
   const adapter = loadAdapter(fakeModel({
     responses: [JSON.stringify({
       groups: [
-        { groupId: 4, title: "Tech news" },
+        { groupId: 4, title: "Tech news", emoji: "📰" },
         { groupId: 999, title: "Ignore this" },
         { groupId: 4, title: "Duplicate" }
       ]
@@ -251,9 +251,10 @@ test("names tab groups from bounded titles and ignores unrequested model output"
 
   assert.equal(result.ok, true);
   assert.deepEqual(JSON.parse(JSON.stringify(result.suggestions)), [
-    { groupId: 4, title: "Tech news" }
+    { groupId: 4, title: "Tech news", emoji: "📰" }
   ]);
   assert.equal(typeof promptOptions.responseConstraint, "object");
+  assert.match(promptText, /separate emoji field/);
   assert.match(promptText, /news\.ycombinator\.com/);
   assert.doesNotMatch(promptText, /Ignore this/);
 });
@@ -263,7 +264,7 @@ test("plans only precise tab clusters and leaves unrelated tabs ungrouped", asyn
   const adapter = loadAdapter(fakeModel({
     responses: [JSON.stringify({
       groups: [
-        { title: "Shopping", tabIds: [1, 2, 3] },
+        { title: "Shopping", emoji: "🛍️", tabIds: [1, 2, 3] },
         { title: "Related tabs", tabIds: [4, 5] },
         { title: "Ignore", tabIds: [999, 1] }
       ]
@@ -283,7 +284,7 @@ test("plans only precise tab clusters and leaves unrelated tabs ungrouped", asyn
 
   assert.equal(result.ok, true);
   assert.deepEqual(JSON.parse(JSON.stringify(result.plans)), [
-    { title: "Shopping", tabIds: [1, 2, 3] }
+    { title: "Shopping", emoji: "🛍️", tabIds: [1, 2, 3] }
   ]);
   assert.match(promptText, /same activity or workstream/);
   assert.match(promptText, /consumer marketplaces/);

@@ -1897,6 +1897,7 @@ test("disabled link-trail grouping leaves newly opened tabs in place", async () 
 test("a nested link group uses AI names as tabs are added and removed, then dissolves at one tab", async () => {
   const responses = ["Climate policy", "Election policy", "Climate policy"];
   const requests = [];
+  let releaseNaming;
   const harness = createHarness({
     initialState: baseState({
       aiConnections: [{
@@ -1917,12 +1918,15 @@ test("a nested link group uses AI names as tabs are added and removed, then diss
     async fetchImpl(url, options) {
       requests.push({ url, body: JSON.parse(options.body) });
       const title = responses.shift();
+      if (requests.length > 1) {
+        await new Promise((resolve) => { releaseNaming = resolve; });
+      }
       return {
         ok: true,
         async json() {
           return {
             choices: [{
-              message: { content: JSON.stringify({ groups: [{ groupId: 1, title }] }) }
+              message: { content: JSON.stringify({ groups: [{ groupId: 1, title, emoji: "🌍" }] }) }
             }]
           };
         }
@@ -1936,23 +1940,33 @@ test("a nested link group uses AI names as tabs are added and removed, then diss
   await eventsCall(harness.events.tabUpdated, 2, { status: "complete" }, harness.tabs.find((tab) => tab.id === 2));
   assert.equal(requests.length, 0);
   await harness.runTimers();
-  assert.equal(harness.tabGroups.get(1).title, "Climate policy");
+  assert.equal(harness.tabGroups.get(1).title, "🌍 Climate policy");
   assert.equal(harness.tabGroups.get(1).collapsed, false);
   assert.deepEqual(harness.tabGroupMoves, []);
   await eventsCall(harness.events.tabUpdated, 2, { groupId: 1 }, harness.tabs.find((tab) => tab.id === 2));
   await harness.runTimers();
-  assert.equal(harness.tabGroups.get(1).title, "Climate policy");
+  assert.equal(harness.tabGroups.get(1).title, "🌍 Climate policy");
   assert.equal(requests.length, 1);
 
   await eventsCall(harness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 3 });
+  await eventsCall(harness.events.tabUpdated, 3, { groupId: 1 }, harness.tabs.find((tab) => tab.id === 3));
+  assert.equal(harness.tabGroups.get(1).title, "🌍 Climate policy");
   await harness.runTimers();
-  assert.equal(harness.tabGroups.get(1).title, "Election policy");
+  assert.equal(requests.length, 2);
+  assert.equal(harness.tabGroups.get(1).title, "🌍 Climate policy");
+  releaseNaming();
+  await settle();
+  assert.equal(harness.tabGroups.get(1).title, "🌍 Election policy");
 
   harness.removeTab(3);
   await eventsCall(harness.events.tabRemoved, 3, { windowId: 1, groupId: 1 });
+  assert.equal(harness.tabGroups.get(1).title, "🌍 Election policy");
   assert.equal(requests.length, 2);
   await harness.runTimers();
-  assert.equal(harness.tabGroups.get(1).title, "Climate policy");
+  assert.equal(harness.tabGroups.get(1).title, "🌍 Election policy");
+  releaseNaming();
+  await settle();
+  assert.equal(harness.tabGroups.get(1).title, "🌍 Climate policy");
   assert.equal(requests.length, 3);
   assert.ok(requests.every((request) => request.url.includes("api.fireworks.ai")));
   assert.ok(requests.every((request) => request.body.reasoning_effort === "none"));
@@ -1964,8 +1978,91 @@ test("a nested link group uses AI names as tabs are added and removed, then diss
   assert.equal(requests.length, 3);
 });
 
-test("a same-site link trail keeps its local name and never calls AI", async () => {
+test("a linked group retains its AI name when an updated naming request fails", async () => {
   let requests = 0;
+  let failNaming;
+  const harness = createHarness({
+    initialState: baseState({
+      aiConnections: [{
+        id: "remote-1", provider: "compatible", label: "Remote model",
+        model: "test-model", endpoint: "https://models.example.net/v1/chat/completions"
+      }],
+      activeAIConnectionId: "remote-1",
+      aiConnectionSecrets: { "remote-1": "test-key" }
+    }),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, groupId: -1, url: "https://example.com/climate", title: "Climate overview" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://news.example.org/emissions", title: "Emissions proposal" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://journal.example.net/election", title: "Election debate" }
+    ],
+    async fetchImpl() {
+      requests += 1;
+      if (requests > 1) {
+        await new Promise((_resolve, reject) => { failNaming = reject; });
+      }
+      return {
+        ok: true,
+        async json() {
+          return { choices: [{ message: { content: JSON.stringify({
+            groups: [{ groupId: 1, title: "Climate policy" }]
+          }) } }] };
+        }
+      };
+    }
+  });
+  await settle();
+  await eventsCall(harness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 2 });
+  await harness.runTimers();
+  assert.equal(harness.tabGroups.get(1).title, "Climate policy");
+
+  await eventsCall(harness.events.createdNavigationTarget, { sourceTabId: 2, tabId: 3 });
+  await harness.runTimers();
+  assert.equal(harness.tabGroups.get(1).title, "Climate policy");
+  failNaming(new Error("Provider unavailable"));
+  await settle();
+  assert.equal(harness.tabGroups.get(1).title, "Climate policy");
+});
+
+test("bulk AI emoji names merge with existing plain names and support subsequent naming", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    initialSessionState: { tabOrganizerState: { managedGroups: {
+      7: { windowId: 1, kind: "bulk", autoName: "Climate policy", semanticName: "Climate policy", manualName: false, color: "blue" }
+    } } },
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: 7, url: "https://example.com/climate", title: "Climate policy" },
+      { id: 2, windowId: 1, index: 1, groupId: 7, url: "https://example.org/emissions", title: "Emissions" },
+      { id: 3, windowId: 1, index: 2, groupId: -1, url: "https://example.net/policy", title: "Policy debate" },
+      { id: 4, windowId: 1, index: 3, groupId: -1, url: "https://journal.example.net/climate", title: "Climate report" }
+    ]
+  });
+  harness.tabGroups.set(7, { id: 7, windowId: 1, title: "Climate policy", color: "blue", collapsed: false });
+  await settle();
+  const organized = await harness.send({
+    type: "ORGANIZE_TABS",
+    tabPlans: [{ title: "Climate policy", emoji: "🌍", tabIds: [3, 4] }]
+  });
+  assert.equal(organized.ok, true);
+  assert.equal(harness.tabs.find((tab) => tab.id === 3).groupId, 7);
+  assert.equal(harness.tabs.find((tab) => tab.id === 4).groupId, 7);
+
+  const freshHarness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, active: true, groupId: -1, url: "https://example.com/climate", title: "Climate policy" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://example.org/emissions", title: "Emissions" }
+    ]
+  });
+  await settle();
+  await freshHarness.send({ type: "ORGANIZE_TABS", tabPlans: [{ title: "Climate policy", emoji: "🌍", tabIds: [1, 2] }] });
+  assert.equal(freshHarness.tabGroups.get(1).title, "🌍 Climate policy");
+  await freshHarness.send({ type: "APPLY_TAB_GROUP_NAMES", groups: [{ groupId: 1, title: "Emission targets", emoji: "🎯" }] });
+  assert.equal(freshHarness.tabGroups.get(1).title, "🎯 Emission targets");
+});
+
+test("same-site linked groups update their AI name and emoji without reverting while pending", async () => {
+  let requests = 0;
+  let finishNaming;
   const harness = createHarness({
     initialState: baseState({
       aiConnections: [{
@@ -1985,20 +2082,59 @@ test("a same-site link trail keeps its local name and never calls AI", async () 
     ],
     async fetchImpl() {
       requests += 1;
-      throw new Error("AI should not be called for one website");
+      const requestNumber = requests;
+      if (requestNumber > 1) {
+        await new Promise((resolve) => { finishNaming = resolve; });
+      }
+      const suggestion = requestNumber === 1
+        ? { groupId: 1, title: "Climate policy", emoji: "🌍" }
+        : { groupId: 1, title: "Election coverage", emoji: "🗳️" };
+      return { ok: true, async json() {
+        return { choices: [{ message: { content: JSON.stringify({ groups: [suggestion] }) } }] };
+      } };
     }
   });
   await settle();
 
   await eventsCall(harness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 2 });
-  await harness.runTimers();
   assert.equal(harness.tabGroups.get(1).title, "🔗 Example");
   assert.equal(requests, 0);
+  await harness.runTimers();
+  assert.equal(harness.tabGroups.get(1).title, "🌍 Climate policy");
+  assert.equal(requests, 1);
+
+  await eventsCall(harness.events.tabUpdated, 2, { groupId: 1 }, harness.tabs.find((tab) => tab.id === 2));
+  await harness.runTimers();
+  assert.equal(requests, 1);
 
   await eventsCall(harness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 3 });
+  await eventsCall(harness.events.tabUpdated, 3, { groupId: 1 }, harness.tabs.find((tab) => tab.id === 3));
+  assert.equal(harness.tabGroups.get(1).title, "🌍 Climate policy");
+  await harness.runTimers();
+  assert.equal(requests, 2);
+  assert.equal(harness.tabGroups.get(1).title, "🌍 Climate policy");
+  finishNaming();
+  await settle();
+  assert.equal(harness.tabGroups.get(1).title, "🗳️ Election coverage");
+
+  harness.removeTab(3);
+  await eventsCall(harness.events.tabRemoved, 3, { windowId: 1, groupId: 1 });
+  assert.equal(harness.tabGroups.get(1).title, "🗳️ Election coverage");
+});
+
+test("same-site linked groups use a source name when AI is unavailable", async () => {
+  const harness = createHarness({
+    initialState: baseState(),
+    tabs: [
+      { id: 1, windowId: 1, index: 0, groupId: -1, url: "https://example.com/one", title: "Story one" },
+      { id: 2, windowId: 1, index: 1, groupId: -1, url: "https://example.com/two", title: "Story two" }
+    ],
+    async fetchImpl() { throw new Error("No provider should be called"); }
+  });
+  await settle();
+  await eventsCall(harness.events.createdNavigationTarget, { sourceTabId: 1, tabId: 2 });
   await harness.runTimers();
   assert.equal(harness.tabGroups.get(1).title, "🔗 Example");
-  assert.equal(requests, 0);
 });
 
 test("local linked-tab names use the source for every mixed-site group", async () => {
